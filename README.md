@@ -19,9 +19,10 @@ Tools for parsing maxTouch config and calculating config crc<br>
 
 
 e.g.
-	run in python command line:
-	python runstat.py -f d:/temp/temp/1.xcfg -s D:\Document\trunk\customers2
+	run in python command line:<br>
 	
+	
+	python runstat.py -f d:/temp/temp/1.xcfg -s D:\Document\trunk\customers2
 	output:
 	 Namespace(database='db_header.csv', filename='d:/temp/temp/1.xcfg', scan='D:\\Document\\trunk\\customers2', verbose=1)
 	('Save db to file: D:\\Users\\pitter.liao\\PycharmProjects\\config_crc\\db_header.csv',)
