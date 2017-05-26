@@ -1,25 +1,26 @@
-usage: xparse [-h] [--version] [-f [XCFG]] [-s [DIR]] [-db [DATABASE]]
-              [-v {0,1,2,3,4}]
 
-Tools for parsing maxTouch config and calculating config crc
+usage: xparse [-h] [--version] [-f [XCFG]] [-s [DIR]] [-db [DATABASE]] [-v {0,1,2,3,4}]<br>
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --version             show version
-  -f [XCFG], --filename [XCFG]
-                        where the 'XCFG' file will be load (default: )
-  -s [DIR], --scan [DIR]
-                        Path will be scanned to build chip Info Block database
-                        (default: )
-  -db [DATABASE], --database [DATABASE]
-                        load chip Info Block database (default: db_header.csv)
-  -v {0,1,2,3,4}, --verbose {0,1,2,3,4}
-                        set debug verbose level[0-5] (default: 3)
-						
+Tools for parsing maxTouch config and calculating config crc<br>
+------------------
 
-	e.g.
+###		
+	optional arguments:<br>
+	-h, --help				show this help message and exit<br>
+	--version				show version<br>
+	-f [XCFG], --filename [XCFG]<br>
+						where the 'XCFG' file will be load (default: )<br>
+	-s [DIR], --scan [DIR]<br>
+						Path will be scanned to build chip Info Block database(default: )<br>
+	-db [DATABASE], --database [DATABASE]<br>
+						load chip Info Block database (default: db_header.csv)<br>
+	-v {0,1,2,3,4}, --verbose {0,1,2,3,4}<br>
+						set debug verbose level[0-5] (default: 3)<br>
+
+
+e.g.
 	run in python command line:
-	(d:\temp\Python\Anaconda2) D:\Users\pitter.liao\PycharmProjects\config_crc>python runstat.py -f d:/temp/temp/1.xcfg -s D:\Document\trunk\customers2
+	python runstat.py -f d:/temp/temp/1.xcfg -s D:\Document\trunk\customers2
 	
 	output:
 	 Namespace(database='db_header.csv', filename='d:/temp/temp/1.xcfg', scan='D:\\Document\\trunk\\customers2', verbose=1)
