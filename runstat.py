@@ -2,7 +2,7 @@ import os
 import sys
 import argparse
 import config_parser as mcp
-from verbose import VerboseMessage
+from verbose import VerboseMessage as v
 
 def runstat(args=None):
     parser = parse_args(args)
@@ -14,38 +14,43 @@ def runstat(args=None):
         parser.print_help()
         return
 
-    VerboseMessage.set(args.verbose)
-
-    if not args.filename and not args.scan:
-        args.print_help()
-        return
+    v.set(args.verbose)
 
     db_loader = mcp.RawConfigScanner()
     db = None
 
     path = args.database
-    if path and os.path.exists(path):
-        db_loader.load(path)
-        # print(db.applymap(lambda x: '{:02X}'.format(x)))
+    if path:
+        if os.path.exists(path):
+            db = db_loader.load(path)
+            #v.msg(v.INFO, db.applymap(lambda x: '{:02X}'.format(x)))
+        else:
+            v.msg(v.INFO, 'No use database')
 
     path = args.scan
-    if path and os.path.exists(path):
-        db = db_loader.scan(path)
-        # print(db.applymap(lambda x: '{:02X}'.format(x)))
-        db_loader.save()
+    if path:
+        if os.path.exists(path):
+            db = db_loader.scan(path)
+            #v.msg(v.INFO, db.applymap(lambda x: '{:02X}'.format(x)))
+            db_loader.save()
+        else:
+            v.msg(v.WARN, 'Un-exist scanning dir \'{:s}\''.format(path))
 
     path = args.filename
-    if path and os.path.exists(path):
-        # load xcfg
-        xcfg = mcp.XcfgConfigParser()
-        xcfg.load(path)
-        xcfg.save()
+    if path:
+        if os.path.exists(path):
+            # load xcfg
+            xcfg = mcp.XcfgConfigParser()
+            xcfg.load(path)
+            xcfg.save()
 
-        # save to raw
-        builder = mcp.XcfgBuildRawFile(xcfg)
-        builder.load_db(db)
-        builder.rebuild_raw_data()
-        builder.save_raw_file()
+            # save to raw
+            builder = mcp.XcfgBuildRawFile(xcfg)
+            builder.load_db(db)
+            builder.rebuild_raw_data()
+            builder.save_raw_file()
+        else:
+            v.msg(v.WARN, 'Un-exist file name \'{:s}\''.format(path))
 
 def parse_args(args=None):
 
@@ -94,6 +99,7 @@ def parse_args(args=None):
 
 
 #cmd = r"-s -f D:\temp\temp\1.xcfg -db D:\temp\temp\db_header.csv".split()
+
 cmd = None
 if __name__ == "__main__":
 

@@ -477,9 +477,9 @@ class XcfgConfigParser(BaseConfigBlock):
         if not name:
             name = os.path.basename(self.get_path())
 
-        main, ext = name.rsplit('.')
-        if not ext or ext == 'raw':
-            ext = 'xcfg'
+        raw = name.rsplit('.', 1)
+        main = raw[0]
+        ext = 'xcfg'
 
         now = datetime.datetime.now()
         basename = '.'.join([main, now.strftime('%Y%m%d_%H%M%S'), 'rebuild', ext])
@@ -771,9 +771,9 @@ class XcfgBuildRawFile(object):
         if not name:
             name = os.path.basename(xcfg.get_path())
 
-        main, ext = name.rsplit('.')
-        if not ext or ext == 'xcfg':
-            ext = 'raw'
+        raw = name.rsplit('.', 1)
+        main = raw[0]
+        ext = 'raw'
 
         now = datetime.datetime.now()
         basename = '.'.join([main, now.strftime('%Y%m%d_%H%M%S'), 'rebuild', ext])
@@ -830,6 +830,8 @@ class RawConfigScanner(RawConfigParser):
                     v.msg(v.CONST, 'Save db to file: {:s}'.format(self.db_file))
             except Exception as e:
                 v.msg(v.ERR, 'Unable to save db file: {:s}, Error = {:s}'.format(self.db_file, str(e)))
+            finally:
+                v.msg(v.INFO, self.db.applymap(lambda x: '{:02X}'.format(x)))
 
         self.db_new = False
 
