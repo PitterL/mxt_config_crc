@@ -662,11 +662,14 @@ class XcfgBuildRawFile(object):
             v.msg(v.WARN, 'Please input the MATRIX_X/Y, format is <x, y>: ')
             v.msg(v.WARN, '## e.g. For \'336T\', input: 24,14')
             try:
-                raw = input('input x,y: ')
+                raw = input('input x,y: ').split(',')
                 if len(raw) == 2:
                     ext = list(map(int, raw))
             except:
                 v.msg(v.ERR, 'Input error({:s}), Use default (0,0) Matrix')
+
+            if not all(ext):
+                raise ValueError('Invalide Maxtrix value: {:d},{:d}'.format(ext[0], ext[1]))
 
             num = self.xcfg.objects_num()
             v.msg(v.WARN, 'Please confirm object numbers: ({:d} default)'.format(num))

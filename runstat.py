@@ -46,9 +46,10 @@ def runstat(args=None):
 
             # save to raw
             builder = mcp.XcfgBuildRawFile(xcfg)
-            builder.load_db(db)
-            builder.rebuild_raw_data()
-            builder.save_raw_file()
+            if args.raw:
+                builder.load_db(db)
+                builder.rebuild_raw_data()
+                builder.save_raw_file()
         else:
             v.msg(v.WARN, 'Un-exist file name \'{:s}\''.format(path))
 
@@ -68,6 +69,10 @@ def parse_args(args=None):
                         default='',
                         metavar='XCFG',
                         help='where the \'XCFG\' file will be load')
+
+    parser.add_argument('-r', '--raw', required=False,
+                        action='store_true',
+                        help='whether save out a \'RAW\' file')
 
     parser.add_argument('-s', '--scan', required=False,
                         nargs='?',
