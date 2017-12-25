@@ -8,8 +8,11 @@ Tools for parsing maxTouch config and calculating config crc<br>
 	optional arguments:
 	-h, --help				show this help message and exit
 	--version				show version
-	-f [XCFG], --filename [XCFG]
-						where the 'XCFG' file will be load (default: )
+	-f [XCFG|TXT], --filename [XCFG|TXT]
+						where the 'XCFG|TXT' file will be load (default: )
+						XCFG file for calculate config CRC
+						TXT file to calculate raw header block crc
+
 	-s [DIR], --scan [DIR]
 						Path will be scanned to build chip Info Block database(default: )
 	-db [DATABASE], --database [DATABASE]
