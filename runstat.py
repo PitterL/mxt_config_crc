@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import config_parser as mcp
+import utils
 from verbose import VerboseMessage as v
 
 def runstat(args=None):
@@ -39,17 +40,25 @@ def runstat(args=None):
     path = args.filename
     if path:
         if os.path.exists(path):
-            # load xcfg
-            xcfg = mcp.XcfgConfigParser()
-            xcfg.load(path)
-            xcfg.save()
+            ex_type = path.rsplit('.', 1)[-1].lower()
+            if ex_type == 'xcfg':
+                # load xcfg
+                xcfg = mcp.XcfgConfigParser()
+                xcfg.load(path)
+                xcfg.save()
 
-            # save to raw
-            builder = mcp.XcfgBuildRawFile(xcfg)
-            if args.raw:
-                builder.load_db(db)
-                builder.rebuild_raw_data()
-                builder.save_raw_file()
+                # save to raw
+                builder = mcp.XcfgBuildRawFile(xcfg)
+                if args.raw:
+                    builder.load_db(db)
+                    builder.rebuild_raw_data()
+                    builder.save_raw_file()
+            elif ex_type == 'txt':
+                sep = args.sep
+                cal = utils.Calculate_CRC(sep)
+                cal.load_file(path)
+            else:
+                v.msg(v.ERR, 'Un-support file name \'{:s}\''.format(path))
         else:
             v.msg(v.WARN, 'Un-exist file name \'{:s}\''.format(path))
 
@@ -67,12 +76,18 @@ def parse_args(args=None):
     parser.add_argument('-f', '--filename', required=False,
                         nargs='?',
                         default='',
-                        metavar='XCFG',
-                        help='where the \'XCFG\' file will be load')
+                        metavar='XCFG|TXT',
+                        help='where the \'XCFG|TXT\' file will be load')
 
     parser.add_argument('-r', '--raw', required=False,
                         action='store_true',
                         help='whether save out a \'RAW\' file')
+
+    parser.add_argument('-sep', '--sep', required=False,
+                        nargs='?',
+                        default=None,
+                        metavar='SEP',
+                        help='Delimiters for \'Raw Block\' split() to data')
 
     parser.add_argument('-s', '--scan', required=False,
                         nargs='?',

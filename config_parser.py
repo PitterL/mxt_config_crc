@@ -530,7 +530,8 @@ class XcfgCalculateCRC(object):
     def load(self, path):
         self.xcfg.load(path)
 
-    def __crc24(self, crc, byte0, byte1):
+    @classmethod
+    def __crc24(cls, crc, byte0, byte1):
 
         crcpoly = 0x80001B
 
@@ -542,7 +543,8 @@ class XcfgCalculateCRC(object):
 
         return result
 
-    def __calculate_crc(self, data, start_off=None, end_off=None):
+    @classmethod
+    def calculate_crc(cls, data, start_off=None, end_off=None):
 
         ptr = data[start_off:end_off]
 
@@ -556,7 +558,7 @@ class XcfgCalculateCRC(object):
 
         crc = 0
         for i in range(len(ptr) // 2):
-            crc = self.__crc24(crc, ptr[i * 2], ptr[i * 2 + 1])
+            crc = cls.__crc24(crc, ptr[i * 2], ptr[i * 2 + 1])
 
             # Mask to 24-bit
         crc &= 0x00FFFFFF
@@ -592,7 +594,7 @@ class XcfgCalculateCRC(object):
             return
 
         start = st[-1]['offset']
-        calculated_crc = self.__calculate_crc(data, start)
+        calculated_crc = self.calculate_crc(data, start)
         matched = calculated_crc == header[self.xcfg.CHECKSUM]
 
         v.msg(v.CONST, 'CRC: calculate={:6X}, cfg={:6X} {:s}'.
@@ -666,7 +668,7 @@ class XcfgBuildRawFile(object):
                 if len(raw) == 2:
                     ext = list(map(int, raw))
             except:
-                v.msg(v.ERR, 'Input error({:s}), Use default (0,0) Matrix')
+                v.msg(v.ERR, 'Input value error')
 
             if not all(ext):
                 raise ValueError('Invalide Maxtrix value: {:d},{:d}'.format(ext[0], ext[1]))
@@ -678,7 +680,7 @@ class XcfgBuildRawFile(object):
                 if len(raw) == 1:
                     num = int(raw)
             except:
-                v.msg(v.ERR, 'Input error({:s}), Use default ({:d})', num)
+                v.msg(v.ERR, 'Input error, Use default ({:d})', num)
             finally:
                 ext.append(num)
 
@@ -931,3 +933,12 @@ class RawConfigScanner(RawConfigParser):
             self.db_new = True
 
         return self.db
+
+
+if __name__ == "__main__":
+    value = "A2 17 10 AA 20 34 22 25 D6 00 81 00 00 2C 58 01 00 00 00 05 59 01 08 00 00 06 62 01 05 00 01 44 68 01 48 00 01 26 B1 01 3F 00 00 47 F1 01 A7 00 00 07 99 02".split()
+    data = [int(v, 16) for v in value[:-3]]
+    print(len(data))
+    print("Info block len:", data[6] * 6 + 7 + 3)
+    crc32 = XcfgCalculateCRC.calculate_crc(data, start_off=None, end_off=None)
+    print(hex(crc32))
