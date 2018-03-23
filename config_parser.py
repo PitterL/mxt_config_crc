@@ -151,12 +151,15 @@ class RawConfigParser(BaseConfigBlock):
 class XcfgConfigParser(BaseConfigBlock):
 
     # [HEADER] Tag:
-    (COMMENTS, VERSION_INFO_HEADER, APPLICATION_INFO_HEADER, OBJECT_DATA) = range(4)
-    re_patterns = {
-        COMMENTS: r'\[COMMENTS\]\n',
-        VERSION_INFO_HEADER: r'\[VERSION_INFO_HEADER\]\n',
-        APPLICATION_INFO_HEADER: r'\[APPLICATION_INFO_HEADER\]\n',
-        OBJECT_DATA: r'\[[a-zA-Z_-]+(\d+) INSTANCE (\d+)\]'
+    (T_COMMENTS, T_VERSION_INFO_HEADER, T_APPLICATION_INFO_HEADER, T_OBJECT_DATA, D_OBJ_VALUE) = range(5)
+    tag_re_patterns = {
+        T_COMMENTS: r'\[COMMENTS\]',
+        T_VERSION_INFO_HEADER: r'\[VERSION_INFO_HEADER\]',
+        T_APPLICATION_INFO_HEADER: r'\[APPLICATION_INFO_HEADER\]',
+        T_OBJECT_DATA: r'\[[a-zA-Z_-]+(\d+) INSTANCE (\d+)\]',
+    }
+    dat_re_patterns = {
+        D_OBJ_VALUE: r'(\d+)[ \t](\d+)[ \t]([^=]+)=(-?\d+)',
     }
 
     # [COMMENTS]:
@@ -188,8 +191,14 @@ class XcfgConfigParser(BaseConfigBlock):
             if self.f:
                 self.f.close()
 
-            self.f = open(path, 'r')
+            self.f = open(path, 'rb')
             self.path = path
+
+    def decode(self, line):
+        if isinstance(line, bytes):
+            return line.decode('utf-8')
+        else:
+            return line
 
     def set_ext(self, name, val):
         if name in self.EX_BLOCK_NAME:
@@ -206,22 +215,33 @@ class XcfgConfigParser(BaseConfigBlock):
     def check_header(self, line):
         raw = line.strip()
         if raw.startswith('[') and raw.endswith(']'):
-            for tag, ptn in self.re_patterns.items():
+            for tag, ptn in self.tag_re_patterns.items():
                 re_tag = re.compile(ptn)
                 result = re_tag.match(line)
                 if result:
                     return tag, result
 
-        return None, None
+        return (None, None)
+
+    def check_data(self, line):
+        raw = line.strip()
+        for tag, ptn in self.dat_re_patterns.items():
+            re_tag = re.compile(ptn)
+            result = re_tag.match(line)
+            if result:
+                return tag, result
+
+        return (None, None)
 
     def parse_comments(self, it):
         info = []
         line = None
         for line in it:
+            line = self.decode(line)
             if line.isspace():
                 continue
 
-            tag = self.check_header(line)[0]
+            tag, _ = self.check_header(line)
             if tag:
                 break
 
@@ -235,10 +255,11 @@ class XcfgConfigParser(BaseConfigBlock):
         data = []
         line = None
         for line in it:
+            line = self.decode(line)
             if line.isspace():
                 continue
 
-            tag = self.check_header(line)[0]
+            tag, _ = self.check_header(line)
             if tag:
                 break
 
@@ -259,10 +280,11 @@ class XcfgConfigParser(BaseConfigBlock):
         info = []
         line = None
         for line in it:
+            line = self.decode(line)
             if line.isspace():
                 continue
 
-            tag = self.check_header(line)[0]
+            tag, _ = self.check_header(line)
             if tag:
                 break
 
@@ -282,6 +304,7 @@ class XcfgConfigParser(BaseConfigBlock):
         info = []
         for i in range(2):
             line = next(it, None).strip()
+            line = self.decode(line)
             if not line:
                 break
 
@@ -300,19 +323,30 @@ class XcfgConfigParser(BaseConfigBlock):
         data = []
         for i in range(info[size]):
             line = next(it, None).strip()
+            line = self.decode(line)
             if not line:
                 break
 
+            tag, _ = self.check_data(line)
+            if tag is not self.D_OBJ_VALUE:
+                print("data crashed:", info[address], info[size], data)
+                if line.split('=') != 2:
+                    break
+
             raw = line.split()
             if len(raw) == 3:
-                offset = int(raw[0])
-                length = int(raw[1])
-                raw2 = raw[2].split('=')
-                if len(raw2) == 2:
-                    val = int(raw2[1])
-                    for j in range(length):
-                        data.append(val & 0xff)
-                        val >>= 8
+                try:
+                    offset = int(raw[0])
+                    length = int(raw[1])
+                    raw2 = raw[2].split('=')
+                    if len(raw2) == 2:
+                        val = int(raw2[1])
+                        for j in range(length):
+                            data.append(val & 0xff)
+                            val >>= 8
+                except Exception as error:
+                    print('Parse data line failed', line, erro)
+                    break
 
                 if offset + length >= info[size]:
                     break
@@ -338,38 +372,53 @@ class XcfgConfigParser(BaseConfigBlock):
         it = iter(self.xcfg_content)
         line = next(it, None)
         while line:
+            line = self.decode(line)
+
             if line.isspace():
                 line = next(it, None)
                 continue
 
             tag, result = self.check_header(line)
             if result:
-                if tag is self.COMMENTS:
+                if tag is self.T_COMMENTS:
                     comments, line = self.parse_comments(it)
-                elif tag is self.VERSION_INFO_HEADER:
+                elif tag is self.T_VERSION_INFO_HEADER:
                     version_info_name, version_info_data, line = self.parse_version_info(it)
-                elif tag is self.APPLICATION_INFO_HEADER:
+                elif tag is self.T_APPLICATION_INFO_HEADER:
                     application_info, line = self.parse_app_info(it)
-                elif tag is self.OBJECT_DATA:
+                elif tag is self.T_OBJECT_DATA:
                     if len(result.groups()) == 2:
                         obj = int(result.group(1))
                         ins = int(result.group(2))
 
-                        info, val, line = self.parse_object_data(it)
+                        info, data, line = self.parse_object_data(it)
                         (address, size) = range(2)
                         if len(info) == 2:
-                            if len(val) == info[size]:
-                                # OBJECT_TITLE_NAME
-                                object_info.append([obj, ins, info[size], info[address]])
-                                object_data.extend(val)
+                            if len(data) != info[size]:
+                                # if termined unexpected, filled zero
+                                left = info[size] - len(data)
+                                if left > 0:
+                                    pad = [0] * left
+                                    print('data not enough, filled {} zero:'.format(left), info, data, pad)
+                                    data.extend(pad)
+                                else:
+                                    print('data overlap, trunk size {}'.format(left), info, data)
+                                    data = data[:info[size]]
+
+                                print("data size mismatch(expect {}, actual {}), crc calcalation may error".format(
+                                    info[size], len(data)))
+
+                            # OBJECT_TITLE_NAME
+                            object_info.append([obj, ins, info[size], info[address]])
+                            object_data.extend(data)
                         else:
-                            v.msg(v.WARN, 'Mismatched object info, data: ', info, val)
+                            v.msg(v.WARN, 'Mismatched object info, data: ', info, data)
                 else:
                     v.msg(v.WARN, 'Unsupported tag: ', line)
             else:
                 v.msg(v.WARN, 'Skip unknowns line: ', line)
 
-            tag = self.check_header(line)[0]
+            tag, _ = self.check_header(line)
             if not tag:
                 line = next(it, None)
             else:
@@ -447,9 +496,9 @@ class XcfgConfigParser(BaseConfigBlock):
             for i, line in enumerate(content):
                 tag, result = self.check_header(line)
                 if result:
-                    if tag is self.COMMENTS:
+                    if tag is self.T_COMMENTS:
                         pass
-                    elif tag is self.VERSION_INFO_HEADER:
+                    elif tag is self.T_VERSION_INFO_HEADER:
                         st = i + 1
                         end = st + len(self.INFO_BLOCK_NAME)
                         idx, data = self.rebuild_checksum_header(content[st:end], calculated_crc)
@@ -460,9 +509,9 @@ class XcfgConfigParser(BaseConfigBlock):
                         else:
                             v.msg(v.ERR, 'Overwrite CRC failed, {:s} not found in header:'.format(self.INFO_BLOCK_NAME[self.CHECKSUM]))
                             v.msg(v.ERR, content[st:end])
-                    elif tag is self.APPLICATION_INFO_HEADER:
+                    elif tag is self.T_APPLICATION_INFO_HEADER:
                         break
-                    elif tag is self.OBJECT_DATA:
+                    elif tag is self.T_OBJECT_DATA:
                         break
 
         dir = os.path.dirname(path)
