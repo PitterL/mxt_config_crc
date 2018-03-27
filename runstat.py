@@ -121,7 +121,7 @@ cmd = None
 #cmd = r"-f D:\trunk\customers2\Desay\Desay_FAW_VW_CRS3_641TD_15398_Goworld\config\Desay_FAW_VW_CRS3_641TD_15398_Goworld_641td_1.1.1_20180320_02.xcfg".split()
 #cmd = r"-f D:\trunk\customers2\Desay\Desay_Hima_SC01_8Inch_641T_ZHT14M08001_ZH\Desay_haima_sc01_8inch_449T_zhenghai_10AA_V2.11_20180321.xcfg --raw".split()
 #cmd = r"-f D:\trunk\customers2\RoadRover\RoadRover_GM_Taiguan_Q6501_6.5Inch_449T\config\RoadRover_GM_Taiguan_Q6501_6.5inch_449TAT_10AA_V2.01_20180322.xcfg --raw".split()
-
+#cmd = r"-f D:\trunk\customers2\Desay\Desay_GEM_JBUB_8Inch_449T_ZHT14M08004_ZH\config\Desay_GEM_JBUB_8Inch_449T_ZHT14M08004_ZH_v1.4.3_20180327.xcfg --raw".split()
 if __name__ == "__main__":
 
     runstat(cmd)
