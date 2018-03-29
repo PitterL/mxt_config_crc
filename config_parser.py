@@ -152,14 +152,15 @@ class XcfgConfigParser(BaseConfigBlock):
 
     # [HEADER] Tag:
     (T_COMMENTS, T_VERSION_INFO_HEADER, T_APPLICATION_INFO_HEADER, T_OBJECT_DATA, D_OBJ_VALUE) = range(5)
+
     tag_re_patterns = {
         T_COMMENTS: r'\[COMMENTS\]',
         T_VERSION_INFO_HEADER: r'\[VERSION_INFO_HEADER\]',
         T_APPLICATION_INFO_HEADER: r'\[APPLICATION_INFO_HEADER\]',
-        T_OBJECT_DATA: r'\[[a-zA-Z_-]+(\d+) INSTANCE (\d+)\]',
+        T_OBJECT_DATA: r'\[[a-zA-Z_-]+(\d+)[ \t]+INSTANCE[ \t]+(\d+)\]',
     }
     dat_re_patterns = {
-        D_OBJ_VALUE: r'(\d+)[ \t](\d+)[ \t]([^=]+)=(-?\d+)',
+        D_OBJ_VALUE: r'(\d+)[ \t]+(\d+)[ \t]+([^=]+)=(-?\d+)',
     }
 
     # [COMMENTS]:
@@ -206,6 +207,15 @@ class XcfgConfigParser(BaseConfigBlock):
         else:
             return line
 
+    def strip(self, line):
+        for i, a in enumerate(line):
+            # studio xcfg with utf-8 will has this head
+            if a != '\ufeff':
+                break
+
+        raw = line[i:]
+        return raw.strip()
+
     def set_ext(self, name, val):
         if name in self.EX_BLOCK_NAME:
             self.exblocks[name] = val
@@ -219,22 +229,21 @@ class XcfgConfigParser(BaseConfigBlock):
         return self.path
 
     def check_header(self, line):
-        line = self.decode(line)
-        raw = line.strip()
+        raw = self.strip(line)
         if raw.startswith('[') and raw.endswith(']'):
             for tag, ptn in self.tag_re_patterns.items():
                 re_tag = re.compile(ptn)
-                result = re_tag.match(line)
+                result = re_tag.match(raw)
                 if result:
                     return tag, result
 
         return (None, None)
 
     def check_data(self, line):
-        raw = line.strip()
+        raw = self.strip(line)
         for tag, ptn in self.dat_re_patterns.items():
             re_tag = re.compile(ptn)
-            result = re_tag.match(line)
+            result = re_tag.match(raw)
             if result:
                 return tag, result
 
@@ -244,7 +253,6 @@ class XcfgConfigParser(BaseConfigBlock):
         info = []
         line = None
         for line in it:
-            #line = self.decode(line)
             if line.isspace():
                 continue
 
@@ -262,7 +270,6 @@ class XcfgConfigParser(BaseConfigBlock):
         data = []
         line = None
         for line in it:
-            #line = self.decode(line)
             if line.isspace():
                 continue
 
@@ -287,7 +294,6 @@ class XcfgConfigParser(BaseConfigBlock):
         info = []
         line = None
         for line in it:
-            #line = self.decode(line)
             if line.isspace():
                 continue
 
@@ -311,7 +317,6 @@ class XcfgConfigParser(BaseConfigBlock):
         info = []
         for i in range(2):
             line = next(it, None).strip()
-            #line = self.decode(line)
             if not line:
                 break
 
@@ -330,7 +335,6 @@ class XcfgConfigParser(BaseConfigBlock):
         data = []
         for i in range(info[size]):
             line = next(it, None).strip()
-            #line = self.decode(line)
             if not line:
                 break
 
@@ -379,8 +383,6 @@ class XcfgConfigParser(BaseConfigBlock):
         it = iter(self.xcfg_content)
         line = next(it, None)
         while line:
-            #line = self.decode(line)
-
             if line.isspace():
                 line = next(it, None)
                 continue
