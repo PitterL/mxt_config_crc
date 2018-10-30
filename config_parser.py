@@ -25,7 +25,7 @@ class BaseConfigBlock(object):
         title_new = pd.DataFrame(title, columns=self.OBJECT_TITLE_NAME[:len(title[0])])
         off = [0]
         off.extend(title_new['length'].cumsum()[:-1])
-        title_new['offset'] = pd.Series(off)
+        title_new['offset'] = pd.Series(off)    #object offset in memory
 
         return title_new
 
@@ -641,20 +641,21 @@ class XcfgCalculateCRC(object):
         v.msg(v.DEBUG, data)
 
         #search start position
-        st = []
+        st_regs = {}
+        st_order = {14 : 1, 71 : 2, 7 : 3}  #priority: T14 > T71 > T7
         for idx in title.index:
             t_info = title.loc[idx]
-            if t_info['object'] == 7:
-                st.append(t_info)
-            elif t_info['object'] == 71:
-                st.append(t_info)
-                break
+            if t_info['object'] in st_order.keys():
+                if t_info['instance'] == 0: #only store the 'start' at instance 0
+                    st_regs[t_info['object']] = t_info
 
-        if not len(st):
-            v.msg(v.ERR, 'Missed T7 or T71 object, not CRC calculated')
+        if not len(st_regs):
+            v.msg(v.ERR, 'Missed {} object, not CRC calculated', st_order.keys())
             return
 
-        start = st[-1]['offset']
+        st = sorted(st_regs, key=lambda x: st_order[x])[0]  # get first sorted object
+        start = st_regs[st]['offset']   #calculate from offset of raw data
+        v.msg(v.CONST, "Start address is T{}, addr {} offset {}".format(st, st_regs[st]['address'], start))
         calculated_crc = self.calculate_crc(data, start)
         matched = calculated_crc == header[self.xcfg.CHECKSUM]
 
