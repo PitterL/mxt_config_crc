@@ -49,7 +49,9 @@ class BaseConfigBlock(object):
 
 class RawConfigParser(BaseConfigBlock):
 
-    (RAW_FILE_HEADER_MAGIC_WORD,) = ("OBP_RAW V1",)
+    (RAW_VERSION_NONE, RAW_VERSION_1, RAW_VERSION_3) = (0, 1, 3)
+
+    (RAW_FILE_HEADER_MAGIC_WORD, RAW_FILE_HEADER_MAGIC_WORD_V3) = ("OBP_RAW V1", "OBP_RAW V3")
     #(RAW_HEADER, RAW_INFO_BLOCK, RAW_INFO_BLOCK_CRC, RAW_CONFIG_DATA_CRC, RAW_CONFIG_DATA) = range(5)
 
     # [RAW_INFO_BLOCK]
@@ -86,10 +88,12 @@ class RawConfigParser(BaseConfigBlock):
 
     def check_magic_header(self, str1):
         if str1.strip() == self.RAW_FILE_HEADER_MAGIC_WORD:
-            return True
+            return RawConfigParser.RAW_VERSION_1
+        if str1.strip() == self.RAW_FILE_HEADER_MAGIC_WORD_V3:
+            return RawConfigParser.RAW_VERSION_3
         else:
             v.msg(v.ERR, 'Not a raw file, header comments{:s}'.format(str1))
-            return False
+            return RawConfigParser.RAW_VERSION_0
 
     def load(self, path):
 
@@ -106,11 +110,25 @@ class RawConfigParser(BaseConfigBlock):
 
         #[RAW_FILE_HEADER_MAGIC_WORD]
         line = self.f.readline()
-        if not self.check_magic_header(line):
+        ver = self.check_magic_header(line)
+
+        if not ver:
+            v.msg(v.ERR, 'Non-supported raw file')
             self.close()
             return
 
         comments.append(line)
+
+        if ver == RawConfigParser.RAW_VERSION_3:
+            #[ENCRYPTION]
+            line = self.f.readline()
+            if line.split()[1] != '0':
+                v.msg(v.ERR, 'Encrypted raw file')
+                return
+
+            # [MAX_ENCRYPTION_BLOCKS]
+            # drop it
+            self.f.readline()
 
         #[RAW_INFO_BLOCK]
         line = self.f.readline()
@@ -151,11 +169,12 @@ class RawConfigParser(BaseConfigBlock):
 class XcfgConfigParser(BaseConfigBlock):
 
     # [HEADER] Tag:
-    (T_COMMENTS, T_VERSION_INFO_HEADER, T_APPLICATION_INFO_HEADER, T_OBJECT_DATA, D_OBJ_VALUE) = range(5)
+    (T_COMMENTS, T_VERSION_INFO_HEADER, T_FILE_INFO_HEADER, T_APPLICATION_INFO_HEADER, T_OBJECT_DATA, D_OBJ_VALUE) = range(6)
 
     tag_re_patterns = {
         T_COMMENTS: r'\[COMMENTS\]',
         T_VERSION_INFO_HEADER: r'\[VERSION_INFO_HEADER\]',
+        T_FILE_INFO_HEADER:  r'\[FILE_INFO_HEADER\]',
         T_APPLICATION_INFO_HEADER: r'\[APPLICATION_INFO_HEADER\]',
         T_OBJECT_DATA: r'\[[a-zA-Z_-]+(\d+)[ \t]+INSTANCE[ \t]+(\d+)\]',
     }
@@ -169,12 +188,15 @@ class XcfgConfigParser(BaseConfigBlock):
     (FAMILY_ID, VARIANT, VERSION, BUILD, VENDOR_ID, PRODUCT_ID, CHECKSUM, INFO_BLOCK_CHECKSUM) = range(8)
     INFO_BLOCK_NAME = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM',
                            'INFO_BLOCK_CHECKSUM') ## should same name as raw
+    (FAMILY_ID_V2, VARIANT_V2, VERSION_V2, BUILD_V2, MATRIX_X_V2, MATRIX_Y_V2, NO_OBJECTS_V2, VENDOR_ID_V2, PRODUCT_ID_V2, CHECKSUM_V2, INFO_BLOCK_CHECKSUM_V2) = range(11)
+    INFO_BLOCK_NAME_V2 = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM',
+                        'INFO_BLOCK_CHECKSUM') ## should same name as raw
     # [APPLICATION_INFO_HEADER]:
     (APP_NAME, APP_VERSION) = range(2)
     # [OBJECT_DATA]
     #(OBJ_TITLE, OBJ_DATA) = range(2)
 
-    EX_BLOCK_NAME = ('objects_num', 'calculated_crc',)
+    EX_BLOCK_NAME = ('objects_num', 'calculated_crc', 'header_size', 'header_ext_data')
 
     def __init__(self):
         super(XcfgConfigParser, self).__init__()
@@ -282,13 +304,17 @@ class XcfgConfigParser(BaseConfigBlock):
                 try:
                     val = int(raw[1], 0)
                 except Exception as e:
-                    v.msg(v.WARN, "Set Un-recognized value to zero: {:s}, Error = {:s}".format(line.strip(), str(e)))
-                    val = 0
+                    v.msg(v.WARN, "Found Non-Number value at line: `{:s}`, Error = `{:s}`".format(line.strip(), str(e)))
+                    val = raw[1]
                 finally:
                     name.append(raw[0].strip())
                     data.append(val)
 
         return name, data, line
+
+    def parse_file_info(self, it):
+
+       return self.parse_version_info(it)
 
     def parse_app_info(self, it):
         info = []
@@ -366,6 +392,14 @@ class XcfgConfigParser(BaseConfigBlock):
 
         return info, data, line
 
+    def extract_info_block(self, header):
+        ext = []
+        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V2[XcfgConfigParser.MATRIX_X_V2]))
+        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V2[XcfgConfigParser.MATRIX_Y_V2]))
+        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V2[XcfgConfigParser.NO_OBJECTS_V2]))
+
+        return ext
+
     def load(self, path):
         self.open(path)
 
@@ -393,6 +427,8 @@ class XcfgConfigParser(BaseConfigBlock):
                     comments, line = self.parse_comments(it)
                 elif tag is self.T_VERSION_INFO_HEADER:
                     version_info_name, version_info_data, line = self.parse_version_info(it)
+                elif tag is self.T_FILE_INFO_HEADER:
+                    file_info_name, file_info_data, line = self.parse_version_info(it)
                 elif tag is self.T_APPLICATION_INFO_HEADER:
                     application_info, line = self.parse_app_info(it)
                 elif tag is self.T_OBJECT_DATA:
@@ -439,12 +475,26 @@ class XcfgConfigParser(BaseConfigBlock):
         #list[string]
         self.set('comments', comments)
         #Series
-        if self.INFO_BLOCK_NAME != tuple(version_info_name):
-            v.msg(v.INFO, 'Name mismatched, use block name:')
-            v.msg(v.INFO, self.INFO_BLOCK_NAME)
+        verinfo = tuple(version_info_name)
+        extract = False
+        if self.INFO_BLOCK_NAME == verinfo:
+            v.msg(v.INFO, '[V1 Version Header]')
+        elif self.INFO_BLOCK_NAME_V2 == verinfo:
+            v.msg(v.INFO, '[V2 Version Header]')
+            extract = True
+        else:
+            v.msg(v.INFO, 'Unsupported Header format:')
             v.msg(v.INFO, version_info_name)
+            return
 
-        header_info = self.build_info_block(self.INFO_BLOCK_NAME, version_info_data)
+        self.set_ext('header_size', len(verinfo))
+
+        header_info = self.build_info_block(verinfo, version_info_data)
+        if extract:
+            ext = self.extract_info_block(header_info)
+            if len(ext):
+                self.set_ext('header_ext_data', ext)
+        
         self.set('header_info', header_info)
 
         #list[string]
@@ -510,7 +560,7 @@ class XcfgConfigParser(BaseConfigBlock):
                         pass
                     elif tag is self.T_VERSION_INFO_HEADER:
                         st = i + 1
-                        end = st + len(self.INFO_BLOCK_NAME)
+                        end = st + self.get_ext('header_size')
                         idx, data = self.rebuild_checksum_header(content[st:end], calculated_crc)
                         if idx is not None:
                             content[st + idx] = self.encode(data)
@@ -541,7 +591,7 @@ class XcfgConfigParser(BaseConfigBlock):
         ext = 'xcfg'
 
         now = datetime.datetime.now()
-        basename = '.'.join([main, now.strftime('%Y%m%d_%H%M%S'), 'rebuild', ext])
+        basename = '.'.join([main, 'rebuild_at', now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(calculated_crc), ext])
         filename = os.path.join(dir, basename)
         v.msg(v.CONST, 'Save xcfg file to: {:s}'.format(filename))
         if os.path.exists(filename):
@@ -716,6 +766,11 @@ class XcfgBuildRawFile(object):
 
     def get_extra_info(self, header):
 
+        # from header info ext first
+        info_ext = self.xcfg.get_ext('header_ext_data')
+        if info_ext and len(info_ext) == 3:  # MATRIX_X, MATRIX_Y, OBJECTS_NUM
+            return tuple(info_ext)
+
         result = self.lookup_db(header)
         if result is not None:
             #print(result.apply(lambda x: '{:02X}'.format(x)))
@@ -746,7 +801,7 @@ class XcfgBuildRawFile(object):
             finally:
                 ext.append(num)
 
-        return ext
+        return tuple(ext)
 
     def rebuild_raw_header_block(self, data, matrix_x, matrix_y, object_num):
 
@@ -843,7 +898,8 @@ class XcfgBuildRawFile(object):
         ext = 'raw'
 
         now = datetime.datetime.now()
-        basename = '.'.join([main, now.strftime('%Y%m%d_%H%M%S'), 'rebuild', ext])
+        crc = xcfg.calculated_crc(0)
+        basename = '.'.join([main, 'rebuild_at', now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(crc), ext])
         filename = os.path.join(dir, basename)
         if os.path.exists(filename):
             os.remove(filename)
@@ -976,6 +1032,8 @@ class RawConfigScanner(RawConfigParser):
         db_list = self.db.values.tolist()
         new_list = []
         if os.path.exists(path):
+            path = os.path.dirname(path)
+            v.msg(v.ERR, 'search path: {:s}'.format(path))
             header_blocks, paths = self.__search_header_in_dirs(path)
             for i, header in enumerate(header_blocks):
                 new_header = self.__check_duplicate_and_update(db_list, list(header.values), paths[i])

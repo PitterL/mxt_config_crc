@@ -65,12 +65,12 @@ def runstat(args=None):
 def parse_args(args=None):
 
     parser = argparse.ArgumentParser(
-        prog='xparse',
+        prog='Maxtouch Config calculator',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description='Tools for parsing maxTouch config and calculating config crc')
 
     parser.add_argument('--version',
-                        action='version', version='%(prog)s v1.0.0',
+                        action='version', version='%(prog)s v1.1.0',
                         help='show version')
 
     parser.add_argument('-f', '--filename', required=False,
@@ -117,7 +117,8 @@ def parse_args(args=None):
     return parser
 
 cmd = None
-#cmd = r"-f D:\trunk\customers2\Desay\Desay_FAW_VW_CRS3_641TD_15398_Goworld\config\Desay_FAW_VW_CRS3_641TD_15398_Goworld_641td_1.1.5_20180328_08.xcfg".split()
+#cmd = r"-f .\test.xcfg --raw".split()
+#cmd = r"-s .\test.xcfg".split()
 if __name__ == "__main__":
 
     runstat(cmd)
