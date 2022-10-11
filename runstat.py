@@ -45,14 +45,14 @@ def runstat(args=None):
                 # load xcfg
                 xcfg = mcp.XcfgConfigParser()
                 xcfg.load(path)
-                xcfg.save()
+                xcfg.save(args.output)
 
                 # save to raw
                 builder = mcp.XcfgBuildRawFile(xcfg)
                 if args.raw:
                     builder.load_db(db)
                     builder.rebuild_raw_data()
-                    builder.save_raw_file()
+                    builder.save_raw_file(args.output)
             elif ex_type == 'txt':
                 sep = args.sep
                 cal = utils.Calculate_CRC(sep)
@@ -70,7 +70,7 @@ def parse_args(args=None):
         description='Tools for parsing maxTouch config and calculating config crc')
 
     parser.add_argument('--version',
-                        action='version', version='%(prog)s v1.1.0',
+                        action='version', version='%(prog)s v1.2.0',
                         help='show version')
 
     parser.add_argument('-f', '--filename', required=False,
@@ -114,11 +114,16 @@ def parse_args(args=None):
                         default=1,
                         help='set debug verbose level[0-5]')
 
+    parser.add_argument('-o', '--output',
+                        type=int,
+                        choices=(1,3),
+                        default=1,
+                        help='set the output config file version')
     return parser
 
 cmd = None
-#cmd = r"-f .\test.xcfg --raw".split()
-#cmd = r"-s .\test.xcfg".split()
+#cmd = r"-f .\test_v3.xcfg --raw -o 3".split()
+#cmd = r"-s .\test.xcfg -o 3".split()
 if __name__ == "__main__":
 
     runstat(cmd)

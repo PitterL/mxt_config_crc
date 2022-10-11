@@ -1,4 +1,5 @@
 import os
+import sys
 import functools
 import pandas as pd
 import re
@@ -188,15 +189,15 @@ class XcfgConfigParser(BaseConfigBlock):
     (FAMILY_ID, VARIANT, VERSION, BUILD, VENDOR_ID, PRODUCT_ID, CHECKSUM, INFO_BLOCK_CHECKSUM) = range(8)
     INFO_BLOCK_NAME = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM',
                            'INFO_BLOCK_CHECKSUM') ## should same name as raw
-    (FAMILY_ID_V2, VARIANT_V2, VERSION_V2, BUILD_V2, MATRIX_X_V2, MATRIX_Y_V2, NO_OBJECTS_V2, VENDOR_ID_V2, PRODUCT_ID_V2, CHECKSUM_V2, INFO_BLOCK_CHECKSUM_V2) = range(11)
-    INFO_BLOCK_NAME_V2 = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM',
+    (FAMILY_ID_V3, VARIANT_V3, VERSION_V3, BUILD_V3, MATRIX_X_V3, MATRIX_Y_V3, NO_OBJECTS_V3, VENDOR_ID_V3, PRODUCT_ID_V3, CHECKSUM_V3, INFO_BLOCK_CHECKSUM_V3) = range(11)
+    INFO_BLOCK_NAME_V3 = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM',
                         'INFO_BLOCK_CHECKSUM') ## should same name as raw
     # [APPLICATION_INFO_HEADER]:
     (APP_NAME, APP_VERSION) = range(2)
     # [OBJECT_DATA]
     #(OBJ_TITLE, OBJ_DATA) = range(2)
 
-    EX_BLOCK_NAME = ('objects_num', 'calculated_crc', 'header_size', 'header_ext_data')
+    EX_BLOCK_NAME = ('objects_num', 'calculated_crc', 'header_size', 'header_ext_data', 'version_info')
 
     def __init__(self):
         super(XcfgConfigParser, self).__init__()
@@ -304,8 +305,8 @@ class XcfgConfigParser(BaseConfigBlock):
                 try:
                     val = int(raw[1], 0)
                 except Exception as e:
-                    v.msg(v.WARN, "Found Non-Number value at line: `{:s}`, Error = `{:s}`".format(line.strip(), str(e)))
-                    val = raw[1]
+                    v.msg(v.WARN, "Found Non-Number value at line: `{:s}`, Error = `{:s}`. Set Value to 0".format(line.strip(), str(e)))
+                    val = 0 #raw[1]
                 finally:
                     name.append(raw[0].strip())
                     data.append(val)
@@ -366,7 +367,7 @@ class XcfgConfigParser(BaseConfigBlock):
 
             tag, _ = self.check_data(line)
             if tag is not self.D_OBJ_VALUE:
-                print("data crashed:", info[address], info[size], data)
+                print("data crashed at OBJECT_ADDRESS[{}] OBJECT_SIZE[{}]: {}".format(info[address], info[size], data))
                 if line.split('=') != 2:
                     break
 
@@ -394,9 +395,9 @@ class XcfgConfigParser(BaseConfigBlock):
 
     def extract_info_block(self, header):
         ext = []
-        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V2[XcfgConfigParser.MATRIX_X_V2]))
-        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V2[XcfgConfigParser.MATRIX_Y_V2]))
-        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V2[XcfgConfigParser.NO_OBJECTS_V2]))
+        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.MATRIX_X_V3]))
+        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.MATRIX_Y_V3]))
+        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.NO_OBJECTS_V3]))
 
         return ext
 
@@ -440,18 +441,17 @@ class XcfgConfigParser(BaseConfigBlock):
                         (address, size) = range(2)
                         if len(info) == 2:
                             if len(data) != info[size]:
+                                print("data size mismatch(expect {}, actual {}), crc calcalation may error".format(
+                                    info[size], len(data)))
                                 # if termined unexpected, filled zero
                                 left = info[size] - len(data)
                                 if left > 0:
                                     pad = [0] * left
-                                    print('data not enough, filled {} zero:'.format(left), info, data, pad)
+                                    print('data not enough, filled {} zero at address'.format(left), info, ":", data, pad)
                                     data.extend(pad)
                                 else:
                                     print('data overlap, trunk size {}'.format(left), info, data)
                                     data = data[:info[size]]
-
-                                print("data size mismatch(expect {}, actual {}), crc calcalation may error".format(
-                                    info[size], len(data)))
 
                             # OBJECT_TITLE_NAME
                             object_info.append([obj, ins, info[size], info[address]])
@@ -479,14 +479,15 @@ class XcfgConfigParser(BaseConfigBlock):
         extract = False
         if self.INFO_BLOCK_NAME == verinfo:
             v.msg(v.INFO, '[V1 Version Header]')
-        elif self.INFO_BLOCK_NAME_V2 == verinfo:
-            v.msg(v.INFO, '[V2 Version Header]')
+        elif self.INFO_BLOCK_NAME_V3 == verinfo:
+            v.msg(v.INFO, '[V3 Version Header]')
             extract = True
         else:
             v.msg(v.INFO, 'Unsupported Header format:')
             v.msg(v.INFO, version_info_name)
             return
 
+        self.set_ext('version_info', verinfo)
         self.set_ext('header_size', len(verinfo))
 
         header_info = self.build_info_block(verinfo, version_info_data)
@@ -513,7 +514,7 @@ class XcfgConfigParser(BaseConfigBlock):
         self.set_ext('calculated_crc', calculated_crc)
         del xCrc
 
-    def rebuild_checksum_header(self, lines, calculated_crc):
+    def _rebuild_checksum_header(self, lines, calculated_crc):
 
         key = self.INFO_BLOCK_NAME[self.CHECKSUM]
         excluded = self.INFO_BLOCK_NAME[self.INFO_BLOCK_CHECKSUM].split('_')[0]
@@ -535,7 +536,73 @@ class XcfgConfigParser(BaseConfigBlock):
 
         return None, None
 
-    def save(self, path=None):
+    def replace_checksum(self, content):
+
+        calculated_crc = self.calculated_crc()
+        config_crc = self.config_crc()
+
+        if calculated_crc == config_crc:
+            v.msg(v.INFO, 'Config CRC matched ({:06X}), Skip save xcfg file'.format(config_crc))
+            return None
+        else:
+            v.msg(v.WARN, 'Use Calculated CRC ({:06X}) overwrite File CRC({:06X})'.format(calculated_crc, config_crc))
+
+            for i, line in enumerate(content):
+                tag, result = self.check_header(line)
+                if result:
+                    if tag is self.T_COMMENTS:
+                        pass
+                    elif tag is self.T_FILE_INFO_HEADER:
+                        pass
+                    elif tag is self.T_VERSION_INFO_HEADER:
+                        st = i + 1
+                        end = st + self.get_ext('header_size')
+                        idx, data = self._rebuild_checksum_header(content[st:end], calculated_crc)
+                        if idx is not None:
+                            content[st + idx] = data # if sys.version_info.major == 3 else self.encode(data)
+                            v.msg(v.DEBUG2, content[st:end])
+                        else:
+                            v.msg(v.ERR, 'Overwrite CRC failed, {:s} not found in header:'.format(self.INFO_BLOCK_NAME[self.CHECKSUM]))
+                            v.msg(v.ERR, content[st:end])
+                        break
+                    elif tag is self.T_APPLICATION_INFO_HEADER:
+                        break
+                    elif tag is self.T_OBJECT_DATA:
+                        break
+            return content
+
+    def convert_output_format(self, content):
+
+        v.msg(v.INFO, 'Convert config from V3 version to V1 version:')
+        content_new = []
+        tag = None
+        for line in content:
+            drop = False
+            t, hit_tag = self.check_header(line)
+            if hit_tag:
+                tag = t
+
+            if tag is self.T_VERSION_INFO_HEADER:
+                if not hit_tag:
+                    if not line.isspace():
+                        raw = line.strip().split('=')
+                        if len(raw) == 2:
+                            name = raw[0]
+                            if name not in self.INFO_BLOCK_NAME:
+                                v.msg(v.INFO, "drop {:s}".format(name))
+                                drop = True
+            elif tag is self.T_FILE_INFO_HEADER:
+                v.msg(v.INFO, "drop {:s}".format(line))
+                drop = True
+            else:
+                pass
+
+            if not drop:
+                content_new.append(line)
+        
+        return content_new
+
+    def save(self, output, path=None):
 
         if not self.xcfg_content:
             return
@@ -543,36 +610,31 @@ class XcfgConfigParser(BaseConfigBlock):
         if not path:
             path = self.get_path()
 
-        calculated_crc = self.calculated_crc()
-        config_crc = self.config_crc()
-
-        if calculated_crc == config_crc:
-            v.msg(v.INFO, 'Config CRC matched ({:06X}), Skip save xcfg file'.format(config_crc))
-            return
+        generate = False
+        # Replace the checksum if mismatch
+        content = self.replace_checksum(self.xcfg_content)
+        if content:
+            generate = True
         else:
-            v.msg(v.WARN, 'Use Calculated CRC ({:06X}) overwrite File CRC({:06X})'.format(calculated_crc, config_crc))
-            content = self.xcfg_content
+             content = self.xcfg_content
 
-            for i, line in enumerate(content):
-                tag, result = self.check_header(line)
-                if result:
-                    if tag is self.T_COMMENTS:
-                        pass
-                    elif tag is self.T_VERSION_INFO_HEADER:
-                        st = i + 1
-                        end = st + self.get_ext('header_size')
-                        idx, data = self.rebuild_checksum_header(content[st:end], calculated_crc)
-                        if idx is not None:
-                            content[st + idx] = self.encode(data)
-                            v.msg(v.DEBUG2, content[st:end])
-                            break
-                        else:
-                            v.msg(v.ERR, 'Overwrite CRC failed, {:s} not found in header:'.format(self.INFO_BLOCK_NAME[self.CHECKSUM]))
-                            v.msg(v.ERR, content[st:end])
-                    elif tag is self.T_APPLICATION_INFO_HEADER:
-                        break
-                    elif tag is self.T_OBJECT_DATA:
-                        break
+        # Convert the output version format
+        verinfo =self.get_ext('version_info')
+        if verinfo ==  self.INFO_BLOCK_NAME:
+            ver = 1
+        elif verinfo ==  self.INFO_BLOCK_NAME_V3:
+            ver = 3
+        else:
+            ver = 0
+
+        if output == 1 and ver == 3: # Output assigned to version 1
+            content = self.convert_output_format(content)
+            if content:
+                generate = True
+                ver = 1
+
+        if not generate:
+            return
 
         dir = os.path.dirname(path)
         name = os.path.basename(path)
@@ -591,16 +653,16 @@ class XcfgConfigParser(BaseConfigBlock):
         ext = 'xcfg'
 
         now = datetime.datetime.now()
-        basename = '.'.join([main, 'rebuild_at', now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(calculated_crc), ext])
+        basename = '.'.join([main, 'rebuild(v{:d}) at'.format(ver), now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(self.calculated_crc()), ext])
         filename = os.path.join(dir, basename)
         v.msg(v.CONST, 'Save xcfg file to: {:s}'.format(filename))
         if os.path.exists(filename):
             os.remove(filename)
 
         with open(filename, 'wb') as outfile:
-            for line in self.xcfg_content:
+            for line in content:
                 outfile.write(self.encode(line))
-            #outfile.write(''.join(map(byte, self.xcfg_content))
+            #outfile.write(''.join(map(byte, content))
             #outfile.write('\n')
             outfile.close()
 
@@ -873,7 +935,7 @@ class XcfgBuildRawFile(object):
         v.msg(v.INFO, '\n'.join(lines))
         self.raw_content = lines
 
-    def save_raw_file(self, path=None):
+    def save_raw_file(self, output, path=None):
         xcfg = self.xcfg
         if xcfg is None:
             return
@@ -899,7 +961,7 @@ class XcfgBuildRawFile(object):
 
         now = datetime.datetime.now()
         crc = xcfg.calculated_crc(0)
-        basename = '.'.join([main, 'rebuild_at', now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(crc), ext])
+        basename = '.'.join([main, 'rebuild(v1) at', now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(crc), ext])
         filename = os.path.join(dir, basename)
         if os.path.exists(filename):
             os.remove(filename)
@@ -1058,6 +1120,7 @@ class RawConfigScanner(RawConfigParser):
 if __name__ == "__main__":
     value = "A2 17 10 AA 20 34 22 25 D6 00 81 00 00 2C 58 01 00 00 00 05 59 01 08 00 00 06 62 01 05 00 01 44 68 01 48 00 01 26 B1 01 3F 00 00 47 F1 01 A7 00 00 07 99 02".split()
     data = [int(v, 16) for v in value[:-3]]
+    print('Debug XcfgCalculateCRC.calculate_crc():')
     print(len(data))
     print("Info block len:", data[6] * 6 + 7 + 3)
     crc32 = XcfgCalculateCRC.calculate_crc(data, start_off=None, end_off=None)
