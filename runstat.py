@@ -70,7 +70,7 @@ def parse_args(args=None):
         description='Tools for parsing maxTouch config and calculating config crc')
 
     parser.add_argument('--version',
-                        action='version', version='%(prog)s v1.2.0',
+                        action='version', version='%(prog)s v1.2.1',
                         help='show version')
 
     parser.add_argument('-f', '--filename', required=False,

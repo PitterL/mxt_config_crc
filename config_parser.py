@@ -653,7 +653,7 @@ class XcfgConfigParser(BaseConfigBlock):
         ext = 'xcfg'
 
         now = datetime.datetime.now()
-        basename = '.'.join([main, 'rebuild(v{:d}) at'.format(ver), now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(self.calculated_crc()), ext])
+        basename = '.'.join([main, 'rebuild(v{:d})_at'.format(ver), now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(self.calculated_crc()), ext])
         filename = os.path.join(dir, basename)
         v.msg(v.CONST, 'Save xcfg file to: {:s}'.format(filename))
         if os.path.exists(filename):
@@ -961,7 +961,7 @@ class XcfgBuildRawFile(object):
 
         now = datetime.datetime.now()
         crc = xcfg.calculated_crc(0)
-        basename = '.'.join([main, 'rebuild(v1) at', now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(crc), ext])
+        basename = '.'.join([main, 'rebuild(v1)_at', now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(crc), ext])
         filename = os.path.join(dir, basename)
         if os.path.exists(filename):
             os.remove(filename)
