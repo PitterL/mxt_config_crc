@@ -1094,7 +1094,8 @@ class RawConfigScanner(RawConfigParser):
         db_list = self.db.values.tolist()
         new_list = []
         if os.path.exists(path):
-            path = os.path.dirname(path)
+            if os.path.isfile(path):
+                path = os.path.dirname(path)
             v.msg(v.ERR, 'search path: {:s}'.format(path))
             header_blocks, paths = self.__search_header_in_dirs(path)
             for i, header in enumerate(header_blocks):
