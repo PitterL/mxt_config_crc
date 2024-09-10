@@ -11,7 +11,7 @@ __metaclass__ = type
 
 class BaseConfigBlock(object):
     OBJECT_TITLE_NAME = ('object', 'instance', 'length', 'address', 'offset')
-    BLOCK_NAME = ('comments', 'header_info', 'application_info', 'object_title', 'object_data')
+    BLOCK_NAME = ('comments', 'header_info', 'file_info', 'application_info', 'object_title', 'object_data')
 
     def __init__(self):
         self.blocks = {}
@@ -303,7 +303,11 @@ class XcfgConfigParser(BaseConfigBlock):
             raw = line.strip().split('=')
             if len(raw) == 2:
                 try:
-                    val = int(raw[1], 0)
+                    s = raw[1].strip().lower()
+                    if s in ('false', 'true'):
+                        val = (s == 'true')
+                    else:
+                        val = int(s, 0)
                 except Exception as e:
                     v.msg(v.WARN, "Found Non-Number value at line: `{:s}`, Error = `{:s}`. Set Value to 0".format(line.strip(), str(e)))
                     val = 0 #raw[1]
@@ -681,14 +685,14 @@ class XcfgConfigParser(BaseConfigBlock):
     def info_crc(self, default=None):
         header = self.get('header_info')
         if header is not None and len(header) >= self.INFO_BLOCK_CHECKSUM:
-            return header[self.INFO_BLOCK_CHECKSUM]
+            return header.iloc[self.INFO_BLOCK_CHECKSUM]
 
         return default
 
     def config_crc(self, default=None):
         header = self.get('header_info')
         if header is not None and len(header) >= self.CHECKSUM:
-            return header[self.CHECKSUM]
+            return header.iloc[self.CHECKSUM]
 
         return default
 
@@ -769,11 +773,11 @@ class XcfgCalculateCRC(object):
         start = st_regs[st]['offset']   #calculate from offset of raw data
         v.msg(v.CONST, "Start address is T{}, addr {} offset {}".format(st, st_regs[st]['address'], start))
         calculated_crc = self.calculate_crc(data, start)
-        matched = calculated_crc == header[self.xcfg.CHECKSUM]
+        matched = calculated_crc == header.iloc[self.xcfg.CHECKSUM]
 
         v.msg(v.CONST, 'CRC: calculate={:6X}, cfg={:6X} {:s}'.
               format(calculated_crc,
-                     header[self.xcfg.CHECKSUM],
+                     header.iloc[self.xcfg.CHECKSUM],
                      '(matched)' if matched else '(mismatch) X X X'))
 
         self.calculated_crc = calculated_crc
