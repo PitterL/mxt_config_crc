@@ -50,9 +50,9 @@ class BaseConfigBlock(object):
 
 class RawConfigParser(BaseConfigBlock):
 
-    (RAW_VERSION_NONE, RAW_VERSION_1, RAW_VERSION_3) = (0, 1, 3)
+    (RAW_VERSION_NONE, RAW_VERSION_1, RAW_VERSION_3, RAW_VERSION_4) = (0, 1, 3, 4)
 
-    (RAW_FILE_HEADER_MAGIC_WORD, RAW_FILE_HEADER_MAGIC_WORD_V3) = ("OBP_RAW V1", "OBP_RAW V3")
+    (RAW_FILE_HEADER_MAGIC_WORD, RAW_FILE_HEADER_MAGIC_WORD_V3, RAW_FILE_HEADER_MAGIC_WORD_V4) = ("OBP_RAW V1", "OBP_RAW V3", "OBP_RAW V4")
     #(RAW_HEADER, RAW_INFO_BLOCK, RAW_INFO_BLOCK_CRC, RAW_CONFIG_DATA_CRC, RAW_CONFIG_DATA) = range(5)
 
     # [RAW_INFO_BLOCK]
@@ -92,6 +92,8 @@ class RawConfigParser(BaseConfigBlock):
             return RawConfigParser.RAW_VERSION_1
         if str1.strip() == self.RAW_FILE_HEADER_MAGIC_WORD_V3:
             return RawConfigParser.RAW_VERSION_3
+        if str1.strip() == self.RAW_FILE_HEADER_MAGIC_WORD_V4:
+            return RawConfigParser.RAW_VERSION_4
         else:
             v.msg(v.ERR, 'Not a raw file, header comments{:s}'.format(str1))
             return RawConfigParser.RAW_VERSION_0
@@ -120,7 +122,7 @@ class RawConfigParser(BaseConfigBlock):
 
         comments.append(line)
 
-        if ver == RawConfigParser.RAW_VERSION_3:
+        if ver >= RawConfigParser.RAW_VERSION_3:
             #[ENCRYPTION]
             line = self.f.readline()
             if line.split()[1] != '0':
@@ -131,17 +133,28 @@ class RawConfigParser(BaseConfigBlock):
             # drop it
             self.f.readline()
 
+        if ver >= RawConfigParser.RAW_VERSION_4:
+            #[NO_DEVICES]
+            # drop it
+            self.f.readline()
+
         #[RAW_INFO_BLOCK]
         line = self.f.readline()
-        version_info_data = list(map(functools.partial(int, base=16), line.split()))
+        version_info_datas = list(map(functools.partial(int, base=16), line.split()))
 
         # INFO_BLOCK_CHECKSUM
         line = self.f.readline()
-        version_info_data.append(int(line, 16))
+        version_info_datas.append(int(line, 16))
 
         # CHECKSUM
         line = self.f.readline()
-        version_info_data.append(int(line, 16))
+        version_info_datas.append(int(line, 16))
+
+        # DEVICE_0
+        if ver >= RawConfigParser.RAW_VERSION_4:
+            # `[DEVICE_0]`
+            # drop it
+            self.f.readline()
 
         #[OBJECT_DATA]
         if self.method == self.PARSE_FULL:
@@ -154,7 +167,7 @@ class RawConfigParser(BaseConfigBlock):
         self.set('comments', comments)
 
         # Series
-        header_info = self.build_info_block(self.RAW_INFO_BLOCK_NAME, version_info_data)
+        header_info = self.build_info_block(self.RAW_INFO_BLOCK_NAME, version_info_datas)
         self.set('header_info', header_info)
 
         # list[OBJ_TITLE:DataFrame, OBJ_DATA:list[int]]
@@ -170,13 +183,14 @@ class RawConfigParser(BaseConfigBlock):
 class XcfgConfigParser(BaseConfigBlock):
 
     # [HEADER] Tag:
-    (T_COMMENTS, T_VERSION_INFO_HEADER, T_FILE_INFO_HEADER, T_APPLICATION_INFO_HEADER, T_OBJECT_DATA, D_OBJ_VALUE) = range(6)
+    (T_COMMENTS, T_VERSION_INFO_HEADER, T_FILE_INFO_HEADER, T_APPLICATION_INFO_HEADER, T_DEVICE, T_OBJECT_DATA, D_OBJ_VALUE) = range(7)
 
     tag_re_patterns = {
         T_COMMENTS: r'\[COMMENTS\]',
         T_VERSION_INFO_HEADER: r'\[VERSION_INFO_HEADER\]',
         T_FILE_INFO_HEADER:  r'\[FILE_INFO_HEADER\]',
         T_APPLICATION_INFO_HEADER: r'\[APPLICATION_INFO_HEADER\]',
+        T_DEVICE: r'\[(DEVICE_[0-9])\]',
         T_OBJECT_DATA: r'\[[a-zA-Z_-]+(\d+)[ \t]+INSTANCE[ \t]+(\d+)\]',
     }
     dat_re_patterns = {
@@ -192,6 +206,11 @@ class XcfgConfigParser(BaseConfigBlock):
     (FAMILY_ID_V3, VARIANT_V3, VERSION_V3, BUILD_V3, MATRIX_X_V3, MATRIX_Y_V3, NO_OBJECTS_V3, VENDOR_ID_V3, PRODUCT_ID_V3, CHECKSUM_V3, INFO_BLOCK_CHECKSUM_V3) = range(11)
     INFO_BLOCK_NAME_V3 = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM',
                         'INFO_BLOCK_CHECKSUM') ## should same name as raw
+    
+    (FAMILY_ID_V4, VARIANT_V4, VERSION_V4, BUILD_V4, MATRIX_X_V4, MATRIX_Y_V4, NO_OBJECTS_V4, NO_DEVICES_V4, VENDOR_ID_V4, PRODUCT_ID_V4, CHECKSUM_V4, INFO_BLOCK_CHECKSUM_V4) = range(12)
+    INFO_BLOCK_NAME_V4 = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS', 'NO_DEVICES', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM_DEVICE_0',
+                    'INFO_BLOCK_CHECKSUM') ## should same name as raw
+   
     # [APPLICATION_INFO_HEADER]:
     (APP_NAME, APP_VERSION) = range(2)
     # [OBJECT_DATA]
@@ -287,8 +306,9 @@ class XcfgConfigParser(BaseConfigBlock):
 
         return info, line
 
-    def parse_version_info(self, it):
 
+    def parse_name_value_pairs(self, it):
+        # return name-data arrays of each pair
         name = []
         data = []
         line = None
@@ -317,9 +337,11 @@ class XcfgConfigParser(BaseConfigBlock):
 
         return name, data, line
 
-    def parse_file_info(self, it):
+    def parse_version_info(self, it):
+        return self.parse_name_value_pairs(it)
 
-       return self.parse_version_info(it)
+    def parse_file_info(self, it):
+       return self.parse_name_value_pairs(it)
 
     def parse_app_info(self, it):
         info = []
@@ -335,6 +357,11 @@ class XcfgConfigParser(BaseConfigBlock):
             info.append(line.strip())
 
         return info, line
+
+    def parse_device_data(self, it):
+        # special handle for dedicated device
+        return self.parse_name_value_pairs(it)
+
 
     def parse_object_data(self, it):
 
@@ -397,12 +424,18 @@ class XcfgConfigParser(BaseConfigBlock):
 
         return info, data, line
 
-    def extract_info_block(self, header):
+    def extract_info_block(self, header, extract):
         ext = []
-        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.MATRIX_X_V3]))
-        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.MATRIX_Y_V3]))
-        ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.NO_OBJECTS_V3]))
-
+        if extract == 3:
+            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.MATRIX_X_V3]))
+            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.MATRIX_Y_V3]))
+            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.NO_OBJECTS_V3]))
+        
+        elif extract == 4:
+            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V4[XcfgConfigParser.MATRIX_X_V4]))
+            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V4[XcfgConfigParser.MATRIX_Y_V4]))
+            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V4[XcfgConfigParser.NO_OBJECTS_V4]))
+            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V4[XcfgConfigParser.NO_DEVICES_V4]))
         return ext
 
     def load(self, path):
@@ -412,8 +445,8 @@ class XcfgConfigParser(BaseConfigBlock):
             return
 
         comments = []
-        version_info_name = []
-        version_info_data = []
+        version_info_names = []
+        version_info_datas = []
         application_info = []
         object_info = []
         object_data = []
@@ -431,11 +464,19 @@ class XcfgConfigParser(BaseConfigBlock):
                 if tag is self.T_COMMENTS:
                     comments, line = self.parse_comments(it)
                 elif tag is self.T_VERSION_INFO_HEADER:
-                    version_info_name, version_info_data, line = self.parse_version_info(it)
+                    version_info_names, version_info_datas, line = self.parse_version_info(it)
                 elif tag is self.T_FILE_INFO_HEADER:
-                    file_info_name, file_info_data, line = self.parse_version_info(it)
+                    file_info_names, file_info_datas, line = self.parse_file_info(it)
                 elif tag is self.T_APPLICATION_INFO_HEADER:
                     application_info, line = self.parse_app_info(it)
+                elif tag is self.T_DEVICE:
+                    _, _, line = self.parse_device_data(it)
+                    device_name = result[1]
+                    # remove the device name in version_info_names
+                    for i, name in enumerate(version_info_names):
+                        if device_name in name:
+                            version_info_names[i] = name.replace("_"+device_name, "")
+                            break
                 elif tag is self.T_OBJECT_DATA:
                     if len(result.groups()) == 2:
                         obj = int(result.group(1))
@@ -479,24 +520,29 @@ class XcfgConfigParser(BaseConfigBlock):
         #list[string]
         self.set('comments', comments)
         #Series
-        verinfo = tuple(version_info_name)
+        verinfo = tuple(version_info_names)
         extract = False
         if self.INFO_BLOCK_NAME == verinfo:
             v.msg(v.INFO, '[V1 Version Header]')
         elif self.INFO_BLOCK_NAME_V3 == verinfo:
             v.msg(v.INFO, '[V3 Version Header]')
-            extract = True
+            extract = 3
         else:
-            v.msg(v.INFO, 'Unsupported Header format:')
-            v.msg(v.INFO, version_info_name)
-            return
+            if 'VERSION' in file_info_names:
+                file_dict = dict(zip(file_info_names, file_info_datas))
+                v.msg(v.INFO, '[V{} Version Header]'.format(file_dict['VERSION']))
+                extract = 4
+            else:
+                v.msg(v.INFO, 'Unsupported Header format:')
+                v.msg(v.INFO, version_info_names)
+                return
 
         self.set_ext('version_info', verinfo)
         self.set_ext('header_size', len(verinfo))
 
-        header_info = self.build_info_block(verinfo, version_info_data)
+        header_info = self.build_info_block(verinfo, version_info_datas)
         if extract:
-            ext = self.extract_info_block(header_info)
+            ext = self.extract_info_block(header_info, extract)
             if len(ext):
                 self.set_ext('header_ext_data', ext)
         

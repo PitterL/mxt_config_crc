@@ -122,7 +122,7 @@ def parse_args(args=None):
     return parser
 
 cmd = None
-#cmd = r"-f .\test\test_v3.xcfg --raw -o 3".split()
+#cmd = r"-f .\test\test_v4.xcfg --raw -o 3".split()
 #cmd = r"-s .\test\test.xcfg -o 3".split()
 #cmd = ["-s", r".\test\test.xcfg\FW 1.1"]
 #cmd = ["-f", r".\test\test_v3_new.xcfg", "--raw", "-o", "3"]
