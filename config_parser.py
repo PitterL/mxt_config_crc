@@ -203,6 +203,12 @@ class XcfgConfigParser(BaseConfigBlock):
     (FAMILY_ID, VARIANT, VERSION, BUILD, VENDOR_ID, PRODUCT_ID, CHECKSUM, INFO_BLOCK_CHECKSUM) = range(8)
     INFO_BLOCK_NAME = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM',
                            'INFO_BLOCK_CHECKSUM') ## should same name as raw
+
+    INFO_BLOCK_NAME_EXTRA_FIELDS = {
+        3: ('MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS'),
+        4: ('MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS', 'NO_DEVICES'),
+    }
+    """    
     (FAMILY_ID_V3, VARIANT_V3, VERSION_V3, BUILD_V3, MATRIX_X_V3, MATRIX_Y_V3, NO_OBJECTS_V3, VENDOR_ID_V3, PRODUCT_ID_V3, CHECKSUM_V3, INFO_BLOCK_CHECKSUM_V3) = range(11)
     INFO_BLOCK_NAME_V3 = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM',
                         'INFO_BLOCK_CHECKSUM') ## should same name as raw
@@ -210,13 +216,14 @@ class XcfgConfigParser(BaseConfigBlock):
     (FAMILY_ID_V4, VARIANT_V4, VERSION_V4, BUILD_V4, MATRIX_X_V4, MATRIX_Y_V4, NO_OBJECTS_V4, NO_DEVICES_V4, VENDOR_ID_V4, PRODUCT_ID_V4, CHECKSUM_V4, INFO_BLOCK_CHECKSUM_V4) = range(12)
     INFO_BLOCK_NAME_V4 = ('FAMILY_ID', 'VARIANT', 'VERSION', 'BUILD', 'MATRIX_X', 'MATRIX_Y', 'NO_OBJECTS', 'NO_DEVICES', 'VENDOR_ID', 'PRODUCT_ID', 'CHECKSUM_DEVICE_0',
                     'INFO_BLOCK_CHECKSUM') ## should same name as raw
-   
+    """
+
     # [APPLICATION_INFO_HEADER]:
-    (APP_NAME, APP_VERSION) = range(2)
+    #(APP_NAME, APP_VERSION) = range(2)
     # [OBJECT_DATA]
     #(OBJ_TITLE, OBJ_DATA) = range(2)
 
-    EX_BLOCK_NAME = ('objects_num', 'calculated_crc', 'header_size', 'header_ext_data', 'version_info')
+    EX_BLOCK_NAME = ('objects_num', 'calculated_crc', 'header_size', 'header_ext_data', 'version_info', 'file_version', 'device_name')
 
     def __init__(self):
         super(XcfgConfigParser, self).__init__()
@@ -362,7 +369,6 @@ class XcfgConfigParser(BaseConfigBlock):
         # special handle for dedicated device
         return self.parse_name_value_pairs(it)
 
-
     def parse_object_data(self, it):
 
         (address, size) = range(2)
@@ -414,7 +420,7 @@ class XcfgConfigParser(BaseConfigBlock):
                             data.append(val & 0xff)
                             val >>= 8
                 except Exception as error:
-                    print('Parse data line failed', line, erro)
+                    print('Parse data line failed', line, error)
                     break
 
                 if offset + length >= info[size]:
@@ -424,18 +430,14 @@ class XcfgConfigParser(BaseConfigBlock):
 
         return info, data, line
 
-    def extract_info_block(self, header, extract):
+    def extract_info_block(self, header, file_ver):
         ext = []
-        if extract == 3:
-            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.MATRIX_X_V3]))
-            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.MATRIX_Y_V3]))
-            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V3[XcfgConfigParser.NO_OBJECTS_V3]))
-        
-        elif extract == 4:
-            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V4[XcfgConfigParser.MATRIX_X_V4]))
-            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V4[XcfgConfigParser.MATRIX_Y_V4]))
-            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V4[XcfgConfigParser.NO_OBJECTS_V4]))
-            ext.append(header.pop(XcfgConfigParser.INFO_BLOCK_NAME_V4[XcfgConfigParser.NO_DEVICES_V4]))
+
+        if file_ver in XcfgConfigParser.INFO_BLOCK_NAME_EXTRA_FIELDS.keys():
+            for item in XcfgConfigParser.INFO_BLOCK_NAME_EXTRA_FIELDS[file_ver]:
+                if item in header:
+                    ext.append(header.pop(item))
+
         return ext
 
     def load(self, path):
@@ -475,7 +477,7 @@ class XcfgConfigParser(BaseConfigBlock):
                     # remove the device name in version_info_names
                     for i, name in enumerate(version_info_names):
                         if device_name in name:
-                            version_info_names[i] = name.replace("_"+device_name, "")
+                            version_info_names[i] = name.replace("_" + device_name, "")
                             break
                 elif tag is self.T_OBJECT_DATA:
                     if len(result.groups()) == 2:
@@ -517,32 +519,29 @@ class XcfgConfigParser(BaseConfigBlock):
 
         #end while
 
-        #list[string]
+        # Save Comments
         self.set('comments', comments)
-        #Series
+        # Save Version info
         verinfo = tuple(version_info_names)
-        extract = False
-        if self.INFO_BLOCK_NAME == verinfo:
-            v.msg(v.INFO, '[V1 Version Header]')
-        elif self.INFO_BLOCK_NAME_V3 == verinfo:
-            v.msg(v.INFO, '[V3 Version Header]')
-            extract = 3
-        else:
-            if 'VERSION' in file_info_names:
-                file_dict = dict(zip(file_info_names, file_info_datas))
-                v.msg(v.INFO, '[V{} Version Header]'.format(file_dict['VERSION']))
-                extract = 4
-            else:
-                v.msg(v.INFO, 'Unsupported Header format:')
-                v.msg(v.INFO, version_info_names)
-                return
-
         self.set_ext('version_info', verinfo)
         self.set_ext('header_size', len(verinfo))
+        # save Device info
+        self.set_ext('device_name', device_name)
+
+        # Save File info
+        if file_info_names:
+            file_dict = dict(zip(file_info_names, file_info_datas))
+            file_ver = file_dict['VERSION']
+        else:
+            # V1 version
+            file_ver = 1
+
+        v.msg(v.INFO, '[V{} Version Header]'.format(file_ver))
+        self.set_ext('file_version', file_ver)
 
         header_info = self.build_info_block(verinfo, version_info_datas)
-        if extract:
-            ext = self.extract_info_block(header_info, extract)
+        if file_ver > 1:
+            ext = self.extract_info_block(header_info, file_ver)
             if len(ext):
                 self.set_ext('header_ext_data', ext)
         
@@ -564,9 +563,17 @@ class XcfgConfigParser(BaseConfigBlock):
         self.set_ext('calculated_crc', calculated_crc)
         del xCrc
 
+    def _full_checksum_name(self):
+        checksum_name = self.INFO_BLOCK_NAME[self.CHECKSUM]
+        device_name = self.get_ext('device_name')
+        if device_name:
+            checksum_name = checksum_name + '_' +  device_name
+        
+        return checksum_name
+
     def _rebuild_checksum_header(self, lines, calculated_crc):
 
-        key = self.INFO_BLOCK_NAME[self.CHECKSUM]
+        key = self._full_checksum_name()
         excluded = self.INFO_BLOCK_NAME[self.INFO_BLOCK_CHECKSUM].split('_')[0]
 
         for idx, line in enumerate(lines):
@@ -581,7 +588,7 @@ class XcfgConfigParser(BaseConfigBlock):
             raw = line.strip().split('=')
             if len(raw) == 2:
                 if key == raw[0].strip() and excluded not in line:
-                    data = '{:s}=0x{:06X}\n'.format(key, calculated_crc)
+                    data = '{:s}=0x{:06X}\r\n'.format(key, calculated_crc)
                     return idx, data
 
         return None, None
@@ -621,9 +628,9 @@ class XcfgConfigParser(BaseConfigBlock):
                         break
             return content
 
-    def convert_output_format(self, content):
+    def convert_output_format(self, content, ver):
 
-        v.msg(v.INFO, 'Convert config from V3 version to V1 version:')
+        v.msg(v.INFO, 'Convert config from V{} version to V1 version:'.format(ver))
         content_new = []
         tag = None
         for line in content:
@@ -639,9 +646,17 @@ class XcfgConfigParser(BaseConfigBlock):
                         if len(raw) == 2:
                             name = raw[0]
                             if name not in self.INFO_BLOCK_NAME:
-                                v.msg(v.INFO, "drop {:s}".format(name))
-                                drop = True
+                                if ver >= 4:
+                                    if name == self._full_checksum_name():
+                                        line = "{:s}={:s}\r\n".format(self.INFO_BLOCK_NAME[self.CHECKSUM], raw[1])
+                                else:
+                                    v.msg(v.INFO, "drop {:s}".format(name))
+                                    drop = True
+
             elif tag is self.T_FILE_INFO_HEADER:
+                v.msg(v.INFO, "drop {:s}".format(line))
+                drop = True
+            elif tag is self.T_DEVICE:
                 v.msg(v.INFO, "drop {:s}".format(line))
                 drop = True
             else:
@@ -669,19 +684,13 @@ class XcfgConfigParser(BaseConfigBlock):
              content = self.xcfg_content
 
         # Convert the output version format
-        verinfo =self.get_ext('version_info')
-        if verinfo ==  self.INFO_BLOCK_NAME:
-            ver = 1
-        elif verinfo ==  self.INFO_BLOCK_NAME_V3:
-            ver = 3
-        else:
-            ver = 0
+        file_ver = self.get_ext('file_version')
 
-        if output == 1 and ver == 3: # Output assigned to version 1
-            content = self.convert_output_format(content)
+        if output == 1 and file_ver > 1: # Output assigned to version 1
+            content = self.convert_output_format(content, file_ver)
             if content:
                 generate = True
-                ver = 1
+                file_ver = 1
 
         if not generate:
             return
@@ -703,7 +712,7 @@ class XcfgConfigParser(BaseConfigBlock):
         ext = 'xcfg'
 
         now = datetime.datetime.now()
-        basename = '.'.join([main, 'rebuild(v{:d})_at'.format(ver), now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(self.calculated_crc()), ext])
+        basename = '.'.join([main, 'rebuild(v{:d})_at'.format(file_ver), now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(self.calculated_crc()), ext])
         filename = os.path.join(dir, basename)
         v.msg(v.CONST, 'Save xcfg file to: {:s}'.format(filename))
         if os.path.exists(filename):
