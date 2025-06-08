@@ -452,6 +452,8 @@ class XcfgConfigParser(BaseConfigBlock):
         application_info = []
         object_info = []
         object_data = []
+        device_name = None
+        file_info_names = None
 
         self.xcfg_content = list(map(self.decode, self.f.readlines()))
         it = iter(self.xcfg_content)
