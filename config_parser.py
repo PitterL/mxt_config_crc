@@ -845,11 +845,11 @@ class XcfgCalculateCRC(object):
 class XcfgBuildRawFile(object):
 
     LOOKUP_DB_TABLE = [
-        XcfgConfigParser.FAMILY_ID,
-        XcfgConfigParser.VARIANT,
-        XcfgConfigParser.VERSION,
-        XcfgConfigParser.BUILD,
-        XcfgConfigParser.INFO_BLOCK_CHECKSUM]
+        XcfgConfigParser.INFO_BLOCK_NAME[XcfgConfigParser.FAMILY_ID],
+        XcfgConfigParser.INFO_BLOCK_NAME[XcfgConfigParser.VARIANT],
+        XcfgConfigParser.INFO_BLOCK_NAME[XcfgConfigParser.VERSION],
+        XcfgConfigParser.INFO_BLOCK_NAME[XcfgConfigParser.BUILD],
+        XcfgConfigParser.INFO_BLOCK_NAME[XcfgConfigParser.INFO_BLOCK_CHECKSUM]]
 
     def __init__(self, xcfg):
         self.xcfg = xcfg
@@ -876,8 +876,8 @@ class XcfgBuildRawFile(object):
             return
 
         cond = []
-        for idx in self.LOOKUP_DB_TABLE:
-            cond.append('{:s}=={:d}'.format(header.index[idx], header[idx]))
+        for item in self.LOOKUP_DB_TABLE:
+            cond.append('{:s}=={:d}'.format(item, header.loc[item]))
 
         words = ' & '.join(cond)
         v.msg(v.DEBUG, words)
@@ -897,7 +897,7 @@ class XcfgBuildRawFile(object):
         result = self.lookup_db(header)
         if result is not None:
             #print(result.apply(lambda x: '{:02X}'.format(x)))
-            ext = result[RawConfigParser.MATRIX_X], result[RawConfigParser.MATRIX_Y], result[RawConfigParser.OBJECTS_NUM]
+            ext = result.iloc[RawConfigParser.MATRIX_X], result.iloc[RawConfigParser.MATRIX_Y], result.iloc[RawConfigParser.OBJECTS_NUM]
         else:
             ext = [0, 0]
             v.msg(v.WARN, header.apply(lambda x: '{:02X}'.format(x)))

@@ -70,7 +70,7 @@ def parse_args(args=None):
         description='Tools for parsing maxTouch config and calculating config crc')
 
     parser.add_argument('--version',
-                        action='version', version='%(prog)s v1.2.6',
+                        action='version', version='%(prog)s v1.2.7',
                         help='show version')
 
     parser.add_argument('-f', '--filename', required=False,
@@ -123,7 +123,7 @@ def parse_args(args=None):
 
 cmd = None
 #cmd = r"-f .\test\test_v4.xcfg --raw -o 1".split()
-#cmd = r"-s .\test\test.xcfg -o 2".split()
+#cmd = r"-f .\test\test_v2.xcfg --raw".split()
 #cmd = ["-f", r".\test\test_da48.xcfg"]
 #cmd = ["-f", r".\test\test_v3_new.xcfg", "--raw", "-o", "3"]
 if __name__ == "__main__":
