@@ -689,7 +689,7 @@ class XcfgConfigParser(BaseConfigBlock):
         file_ver = self.get_ext('file_version')
 
         if output == 1 and file_ver > 1: # Output assigned to version 1
-            content = self.convert_output_format(content, file_ver)
+            content = self.convert_output_format(content, output)
             if content:
                 generate = True
                 file_ver = 1
