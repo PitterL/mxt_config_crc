@@ -648,13 +648,18 @@ class XcfgConfigParser(BaseConfigBlock):
                         if len(raw) == 2:
                             name = raw[0]
                             if name not in self.INFO_BLOCK_NAME:
-                                if ver >= 4:
+                                if ver < 4:
                                     if name == self._full_checksum_name():
+                                        # cover the checksum name to common name in version less than 4
                                         line = "{:s}={:s}\r\n".format(self.INFO_BLOCK_NAME[self.CHECKSUM], raw[1])
+                                    else:
+                                        # skip all extra fields in version less than 4
+                                        v.msg(v.INFO, "drop {:s}".format(name))
+                                        drop = True
                                 else:
-                                    v.msg(v.INFO, "drop {:s}".format(name))
-                                    drop = True
-
+                                    # keep all fields in version 4
+                                    pass
+                                
             elif tag is self.T_FILE_INFO_HEADER:
                 v.msg(v.INFO, "drop {:s}".format(line))
                 drop = True
@@ -742,14 +747,14 @@ class XcfgConfigParser(BaseConfigBlock):
     def info_crc(self, default=None):
         header = self.get('header_info')
         if header is not None and len(header) >= self.INFO_BLOCK_CHECKSUM:
-            return header.iloc[self.INFO_BLOCK_CHECKSUM]
+            return header.loc[self.INFO_BLOCK_NAME[self.INFO_BLOCK_CHECKSUM]]
 
         return default
 
     def config_crc(self, default=None):
         header = self.get('header_info')
         if header is not None and len(header) >= self.CHECKSUM:
-            return header.iloc[self.CHECKSUM]
+            return header.loc[self.INFO_BLOCK_NAME[self.CHECKSUM]]
 
         return default
 
@@ -830,11 +835,11 @@ class XcfgCalculateCRC(object):
         start = st_regs[st]['offset']   #calculate from offset of raw data
         v.msg(v.CONST, "Start address is T{}, addr {} offset {}".format(st, st_regs[st]['address'], start))
         calculated_crc = self.calculate_crc(data, start)
-        matched = calculated_crc == header.iloc[self.xcfg.CHECKSUM]
+        matched = calculated_crc == header.loc[self.xcfg.INFO_BLOCK_NAME[self.xcfg.CHECKSUM]]
 
         v.msg(v.CONST, 'CRC: calculate={:6X}, cfg={:6X} {:s}'.
               format(calculated_crc,
-                     header.iloc[self.xcfg.CHECKSUM],
+                     header.loc[self.xcfg.INFO_BLOCK_NAME[self.xcfg.CHECKSUM]],
                      '(matched)' if matched else '(mismatch) X X X'))
 
         self.calculated_crc = calculated_crc
@@ -897,7 +902,7 @@ class XcfgBuildRawFile(object):
         result = self.lookup_db(header)
         if result is not None:
             #print(result.apply(lambda x: '{:02X}'.format(x)))
-            ext = result.iloc[RawConfigParser.MATRIX_X], result.iloc[RawConfigParser.MATRIX_Y], result.iloc[RawConfigParser.OBJECTS_NUM]
+            ext = result.loc[RawConfigParser.RAW_INFO_BLOCK_NAME[RawConfigParser.MATRIX_X]], result.loc[RawConfigParser.RAW_INFO_BLOCK_NAME[RawConfigParser.MATRIX_Y]], result.loc[RawConfigParser.RAW_INFO_BLOCK_NAME[RawConfigParser.OBJECTS_NUM]]
         else:
             ext = [0, 0]
             v.msg(v.WARN, header.apply(lambda x: '{:02X}'.format(x)))
