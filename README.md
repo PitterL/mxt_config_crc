@@ -14,10 +14,10 @@ usage: xparse [-h] [--version] [-f [XCFG]] [-s [DIR]] [-db [DATABASE]] [-v {0,1,
 Tools for parsing maxTouch config and calculating config crc<br>
 ------------------
 
-###		
-Namespace(filename='', raw=False, sep=None, scan='', database='db_header.csv', verbose=1, output=1)
+###
+Namespace(filename='', raw=False, sep=None, scan='', database='db_header.csv', verbose=1, output=None)
 usage: Maxtouch Config calculator [-h] [--version] [-f [XCFG|TXT]] [-r] [-sep [SEP]] [-s [DIR]] [-db [DATABASE]]
-                                  [-v {0,1,2,3,4}] [-o {1,3}]
+								  [-v {0,1,2,3,4}] [-o {1,2}]
 
 Tools for parsing maxTouch config and calculating config crc
 
@@ -36,14 +36,19 @@ options:
                         load chip Info Block database (default: db_header.csv)
 	-v {0,1,2,3,4}, --verbose {0,1,2,3,4}
                         set debug verbose level[0-5] (default: 1)
-	-o {1,3}, --output {1,3}
-                        set the output config file version (default: 1)
+	-o {1,2}, --output {1,2}
+	                        set the output format (default: keep xcfg input version except V2->V1, raw outputs V1; 1: force V1 format; 2: use higher/original version when available)
 e.g.
 	run in python command line:<br>
 	
 python runstat.py -f test.xcfg --raw
 
-Namespace(filename='test.xcfg', raw=True, sep=None, scan='', database='db_header.csv', verbose=1, output=1)
+Default output behavior:
+	- xcfg: keep the input version, except V2 files are saved in V1 format
+	- raw: save in V1 format by default
+	- use -o 2 to emit higher/original format when supported by the input file
+
+Namespace(filename='test.xcfg', raw=True, sep=None, scan='', database='db_header.csv', verbose=1, output=None)
 ("Found Non-Number value at line: `PRODUCT_ID=TBD`, Error = `invalid literal for int() with base 0: 'TBD'`. Set Value to 0",)
 
 ('Start address is T14, addr 415 offset 194',)
@@ -52,10 +57,16 @@ Namespace(filename='test.xcfg', raw=True, sep=None, scan='', database='db_header
 
 ('Use Calculated CRC (B277E4) overwrite File CRC(BA8CF0)',)
 
-('Save xcfg file to: D:\\Users\\a41450\\PycharmProjects\\config_crc\\test.rebuild(v1)_at.20221027_115717.crc_0xB277E4.xcfg',)
+('Save xcfg file to: .\\test.rebuild(v1)_at.20221027_115717.crc_0xB277E4.xcfg',)
 
-('Save raw file to: D:\\Users\\a41450\\PycharmProjects\\config_crc\\test.rebuild(v1)_at.20221027_115717.crc_0xB277E4.raw',)
+('Save raw file to: .\\test.rebuild(v1)_at.20221027_115717.crc_0xB277E4.raw',)
 
 Note：
 For v1 version config, there is not X/Ysize information, need scan the director first with '-s'
+
+V4 payload support:
+	- supported xcfg payload tag: [T68_SERIALDATACOMMAND_PAYLOAD_*]
+	- payload data is preserved in xcfg output
+	- payload data is excluded from config CRC calculation
+	- when --raw is used, payload is emitted as a dedicated T68 raw record
 

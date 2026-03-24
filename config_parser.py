@@ -10,19 +10,47 @@ from verbose import VerboseMessage as v
 __metaclass__ = type
 
 class BaseConfigBlock(object):
+    """Shared container helpers for parsed config/header/object blocks."""
+
     OBJECT_TITLE_NAME = ('object', 'instance', 'length', 'address', 'offset')
     BLOCK_NAME = ('comments', 'header_info', 'file_info', 'application_info', 'object_title', 'object_data')
 
     def __init__(self):
+        """Initialize the in-memory block storage.
+
+        Input:
+            None.
+        Output:
+            None. Creates an empty dictionary used by parser subclasses.
+        """
         self.blocks = {}
         pass
 
     def build_info_block(self, name, data):
+        """Build a pandas Series for header-style name/value blocks.
+
+        Input:
+            name: Iterable of field names.
+            data: Iterable of values aligned with the field names.
+        Output:
+            pandas.Series containing the supplied values indexed by field name.
+        """
         block = pd.Series(data=data, index=name)
 
         return block
 
     def build_object_title_block(self, title):
+        """Build an object-title table and derive cumulative offsets.
+
+        Input:
+            title: List of object metadata rows.
+        Output:
+            pandas.DataFrame with object, instance, length, address, and offset.
+
+        Key steps:
+            1. Convert raw rows into a DataFrame.
+            2. Derive each object's byte offset from the cumulative length column.
+        """
         title_new = pd.DataFrame(title, columns=self.OBJECT_TITLE_NAME[:len(title[0])])
         off = [0]
         off.extend(title_new['length'].cumsum()[:-1])
@@ -31,15 +59,38 @@ class BaseConfigBlock(object):
         return title_new
 
     def set(self, name, val):
+        """Store a parsed block by its well-known block name.
+
+        Input:
+            name: Registered block key.
+            val: Parsed block value.
+        Output:
+            None. Updates the internal block dictionary when the key is allowed.
+        """
         if name in self.BLOCK_NAME:
             self.blocks[name] = val
 
     def get(self, name, default=None):
+        """Read a parsed block from the internal block dictionary.
+
+        Input:
+            name: Registered block key.
+            default: Fallback value when the block is absent.
+        Output:
+            Stored block value or the provided default.
+        """
         if name in self.blocks.keys():
             return self.blocks[name]
         return default
 
     def clr(self, name=None):
+        """Clear one parsed block or all parsed blocks.
+
+        Input:
+            name: Optional block key to clear. When omitted, all blocks are removed.
+        Output:
+            None. Mutates the internal block dictionary in place.
+        """
         if not name:
             for name in self.blocks.keys():
                 del self.blocks[name]
@@ -49,6 +100,7 @@ class BaseConfigBlock(object):
 
 
 class RawConfigParser(BaseConfigBlock):
+    """Parser for Microchip raw configuration files across V1/V3/V4 formats."""
 
     (RAW_VERSION_NONE, RAW_VERSION_1, RAW_VERSION_3, RAW_VERSION_4) = (0, 1, 3, 4)
 
@@ -64,6 +116,13 @@ class RawConfigParser(BaseConfigBlock):
     (PARSE_FULL, PARSE_HEADER) = range(2)
 
     def __init__(self, **kwargs):
+        """Configure the raw parser and choose header-only or full parsing mode.
+
+        Input:
+            kwargs: Optional method selection, e.g. PARSE_FULL or PARSE_HEADER.
+        Output:
+            None. Initializes parser mode and file handle state.
+        """
         super(RawConfigParser, self).__init__()
         if hasattr(kwargs, 'method'):
             self.method = kwargs['method']
@@ -72,10 +131,18 @@ class RawConfigParser(BaseConfigBlock):
         self.f = None
 
     def __del__(self):
+        """Ensure the underlying file handle is closed during object cleanup."""
         if hasattr(self, 'f'):
             self.close()
 
     def open(self, path):
+        """Open a raw config file for reading.
+
+        Input:
+            path: Raw file path.
+        Output:
+            None. Replaces the active file handle when the file can be opened.
+        """
         if path:
             if self.f:
                 self.f.close()
@@ -83,11 +150,19 @@ class RawConfigParser(BaseConfigBlock):
             self.f = f
 
     def close(self):
+        """Close the active raw file handle when present."""
         if self.f:
             self.f.close()
             self.f = None
 
     def check_magic_header(self, str1):
+        """Detect the raw file version from the first header line.
+
+        Input:
+            str1: First line from a raw file.
+        Output:
+            Integer raw-version constant or 0 when the header is unsupported.
+        """
         if str1.strip() == self.RAW_FILE_HEADER_MAGIC_WORD:
             return RawConfigParser.RAW_VERSION_1
         if str1.strip() == self.RAW_FILE_HEADER_MAGIC_WORD_V3:
@@ -99,6 +174,18 @@ class RawConfigParser(BaseConfigBlock):
             return RawConfigParser.RAW_VERSION_0
 
     def load(self, path):
+        """Parse a raw file into header/object blocks.
+
+        Input:
+            path: Path to the raw file.
+        Output:
+            None. Parsed content is stored into this instance via BaseConfigBlock.
+
+        Key steps:
+            1. Read the raw version header and optional V3/V4 metadata lines.
+            2. Parse the info block and CRC lines.
+            3. Optionally read and flatten object records when full parsing is enabled.
+        """
 
         self.open(path)
 
@@ -177,13 +264,15 @@ class RawConfigParser(BaseConfigBlock):
             self.set('object_data', object_data)
 
     def clear(self):
+        """Clear parsed raw blocks and close the current file handle."""
         super(RawConfigParser, self).clr()
         self.close()
 
 class XcfgConfigParser(BaseConfigBlock):
+    """Parser and writer for Microchip Studio XCFG files, including payload sections."""
 
     # [HEADER] Tag:
-    (T_COMMENTS, T_VERSION_INFO_HEADER, T_FILE_INFO_HEADER, T_APPLICATION_INFO_HEADER, T_DEVICE, T_OBJECT_DATA, D_OBJ_VALUE) = range(7)
+    (T_COMMENTS, T_VERSION_INFO_HEADER, T_FILE_INFO_HEADER, T_APPLICATION_INFO_HEADER, T_DEVICE, T_PAYLOAD_DATA, T_OBJECT_DATA, D_OBJ_VALUE) = range(8)
 
     tag_re_patterns = {
         T_COMMENTS: r'\[COMMENTS\]',
@@ -191,6 +280,7 @@ class XcfgConfigParser(BaseConfigBlock):
         T_FILE_INFO_HEADER:  r'\[FILE_INFO_HEADER\]',
         T_APPLICATION_INFO_HEADER: r'\[APPLICATION_INFO_HEADER\]',
         T_DEVICE: r'\[(DEVICE_[0-9])\]',
+        T_PAYLOAD_DATA: r'\[(T68_SERIALDATACOMMAND_PAYLOAD_[^\]]+)\]',
         T_OBJECT_DATA: r'\[[a-zA-Z_-]+(\d+)[ \t]+INSTANCE[ \t]+(\d+)\]',
     }
     dat_re_patterns = {
@@ -223,20 +313,29 @@ class XcfgConfigParser(BaseConfigBlock):
     # [OBJECT_DATA]
     #(OBJ_TITLE, OBJ_DATA) = range(2)
 
-    EX_BLOCK_NAME = ('objects_num', 'calculated_crc', 'header_size', 'header_ext_data', 'version_info', 'file_version', 'device_name')
+    EX_BLOCK_NAME = ('objects_num', 'calculated_crc', 'header_size', 'header_ext_data', 'version_info', 'file_version', 'device_name', 'payload_sections')
 
     def __init__(self):
+        """Initialize parser state, extension storage, and file-handle fields."""
         super(XcfgConfigParser, self).__init__()
         self.exblocks = {}
         self.path = None
         self.f = None
 
     def __del__(self):
+        """Close the opened XCFG file during object cleanup when needed."""
         if hasattr(self, 'f'):
             if self.f:
                 self.f.close()
 
     def open(self, path):
+        """Open an XCFG file in binary mode and remember its path.
+
+        Input:
+            path: Path to an xcfg file.
+        Output:
+            None. Updates self.f and self.path when a path is provided.
+        """
         if path:
             if self.f:
                 self.f.close()
@@ -245,18 +344,39 @@ class XcfgConfigParser(BaseConfigBlock):
             self.path = path
 
     def decode(self, line):
+        """Decode binary file content into UTF-8 text when required.
+
+        Input:
+            line: bytes or str value.
+        Output:
+            Decoded str value.
+        """
         if isinstance(line, bytes):
             return line.decode('utf-8')
         else:
             return line
 
     def encode(self, line):
+        """Encode text back into UTF-8 bytes when required.
+
+        Input:
+            line: str or bytes value.
+        Output:
+            Encoded bytes value.
+        """
         if isinstance(line, str):
             return line.encode('utf-8')
         else:
             return line
 
     def strip(self, line):
+        """Remove BOM characters and surrounding whitespace from a line.
+
+        Input:
+            line: Raw text line from the xcfg file.
+        Output:
+            Sanitized string without BOM prefix or surrounding whitespace.
+        """
         for i, a in enumerate(line):
             # studio xcfg with utf-8 will has this head
             if a != '\ufeff':
@@ -266,18 +386,42 @@ class XcfgConfigParser(BaseConfigBlock):
         return raw.strip()
 
     def set_ext(self, name, val):
+        """Store parser extension metadata that does not belong to BaseConfigBlock.
+
+        Input:
+            name: Known extension key.
+            val: Value to store under that key.
+        Output:
+            None. Updates self.exblocks when the key is allowed.
+        """
         if name in self.EX_BLOCK_NAME:
             self.exblocks[name] = val
 
     def get_ext(self, name, default=None):
+        """Read extension metadata collected during parsing or export.
+
+        Input:
+            name: Extension key.
+            default: Fallback when the key is missing.
+        Output:
+            Stored extension value or the provided default.
+        """
         if name in self.exblocks.keys():
             return self.exblocks[name]
         return default
 
     def get_path(self):
+        """Return the currently loaded xcfg path."""
         return self.path
 
     def check_header(self, line):
+        """Match a line against known XCFG section headers.
+
+        Input:
+            line: Candidate xcfg line.
+        Output:
+            Tuple of (tag_id, regex_match) or (None, None).
+        """
         raw = self.strip(line)
         if raw.startswith('[') and raw.endswith(']'):
             for tag, ptn in self.tag_re_patterns.items():
@@ -289,6 +433,13 @@ class XcfgConfigParser(BaseConfigBlock):
         return (None, None)
 
     def check_data(self, line):
+        """Match a line against known XCFG data-row patterns.
+
+        Input:
+            line: Candidate xcfg line.
+        Output:
+            Tuple of (data_tag_id, regex_match) or (None, None).
+        """
         raw = self.strip(line)
         for tag, ptn in self.dat_re_patterns.items():
             re_tag = re.compile(ptn)
@@ -299,6 +450,13 @@ class XcfgConfigParser(BaseConfigBlock):
         return (None, None)
 
     def parse_comments(self, it):
+        """Parse the free-form [COMMENTS] section.
+
+        Input:
+            it: Iterator over xcfg lines positioned after the header tag.
+        Output:
+            Tuple of (comment_lines, next_header_line).
+        """
         info = []
         line = None
         for line in it:
@@ -315,7 +473,18 @@ class XcfgConfigParser(BaseConfigBlock):
 
 
     def parse_name_value_pairs(self, it):
-        # return name-data arrays of each pair
+        """Parse simple NAME=VALUE sections into parallel name/value arrays.
+
+        Input:
+            it: Iterator over xcfg lines positioned after a section header.
+        Output:
+            Tuple of (name_list, value_list, next_header_line).
+
+        Key steps:
+            1. Stop when the next section header is encountered.
+            2. Normalize booleans and integers.
+            3. Replace malformed numeric values with 0 and log a warning.
+        """
         name = []
         data = []
         line = None
@@ -345,12 +514,33 @@ class XcfgConfigParser(BaseConfigBlock):
         return name, data, line
 
     def parse_version_info(self, it):
+        """Parse the [VERSION_INFO_HEADER] body.
+
+        Input:
+            it: Iterator over xcfg lines.
+        Output:
+            Same tuple format as parse_name_value_pairs.
+        """
         return self.parse_name_value_pairs(it)
 
     def parse_file_info(self, it):
-       return self.parse_name_value_pairs(it)
+        """Parse the [FILE_INFO_HEADER] body.
+
+        Input:
+            it: Iterator over xcfg lines.
+        Output:
+            Same tuple format as parse_name_value_pairs.
+        """
+        return self.parse_name_value_pairs(it)
 
     def parse_app_info(self, it):
+        """Parse the [APPLICATION_INFO_HEADER] body.
+
+        Input:
+            it: Iterator over xcfg lines.
+        Output:
+            Tuple of (application_info_lines, next_header_line).
+        """
         info = []
         line = None
         for line in it:
@@ -366,10 +556,96 @@ class XcfgConfigParser(BaseConfigBlock):
         return info, line
 
     def parse_device_data(self, it):
-        # special handle for dedicated device
+        """Parse device-specific header fields that follow [DEVICE_n].
+
+        Input:
+            it: Iterator over xcfg lines.
+        Output:
+            Same tuple format as parse_name_value_pairs.
+        """
         return self.parse_name_value_pairs(it)
 
+    def parse_payload_data(self, it, section_name):
+        """Parse a T68 payload section and preserve its metadata and bytes.
+
+        Input:
+            it: Iterator over xcfg lines positioned after the payload header.
+            section_name: Payload section tag name.
+        Output:
+            Tuple of (payload_dict, next_header_line).
+
+        Key steps:
+            1. Read payload checksum/size fields.
+            2. Expand packed integer DATA rows into little-endian bytes.
+            3. Pad or truncate to the declared payload size.
+        """
+        line = None
+        payload = {
+            'name': section_name,
+            'checksum': 0,
+            'size': 0,
+            'data': [],
+        }
+
+        for line in it:
+            if line is None:
+                break
+
+            if line.isspace():
+                continue
+
+            tag, _ = self.check_header(line)
+            if tag:
+                break
+
+            data_tag, match = self.check_data(line)
+            if data_tag is self.D_OBJ_VALUE:
+                length = int(match.group(2))
+                value = int(match.group(4))
+                for _ in range(length):
+                    payload['data'].append(value & 0xff)
+                    value >>= 8
+                continue
+
+            raw = line.strip().split('=', 1)
+            if len(raw) != 2:
+                continue
+
+            name = raw[0].strip()
+            try:
+                value = int(raw[1].strip(), 0)
+            except Exception as error:
+                v.msg(v.WARN, "Invalid payload field at line `{:s}`, Error=`{:s}`".format(line.strip(), str(error)))
+                continue
+
+            if name == 'PAYLOAD_CHECKSUM':
+                payload['checksum'] = value
+            elif name == 'PAYLOAD_SIZE':
+                payload['size'] = value
+
+        size = payload['size']
+        data = payload['data']
+        if size:
+            if len(data) < size:
+                data.extend([0] * (size - len(data)))
+            elif len(data) > size:
+                payload['data'] = data[:size]
+
+        return payload, line
+
     def parse_object_data(self, it):
+        """Parse one object section's address, size, and flattened data bytes.
+
+        Input:
+            it: Iterator over xcfg lines positioned after an object header.
+        Output:
+            Tuple of (info_list, data_bytes, next_header_line).
+
+        Key steps:
+            1. Read OBJECT_ADDRESS and OBJECT_SIZE.
+            2. Expand each packed value row into little-endian bytes.
+            3. Stop on malformed rows or when the declared size is reached.
+        """
 
         (address, size) = range(2)
         line = None
@@ -380,7 +656,11 @@ class XcfgConfigParser(BaseConfigBlock):
         #       OBJECT_SIZE = 240
         info = []
         for i in range(2):
-            line = next(it, None).strip()
+            line = next(it, None)
+            if line is None:
+                break
+
+            line = line.strip()
             if not line:
                 break
 
@@ -398,14 +678,18 @@ class XcfgConfigParser(BaseConfigBlock):
         #       ...
         data = []
         for i in range(info[size]):
-            line = next(it, None).strip()
+            line = next(it, None)
+            if line is None:
+                break
+
+            line = line.strip()
             if not line:
                 break
 
             tag, _ = self.check_data(line)
             if tag is not self.D_OBJ_VALUE:
                 print("data crashed at OBJECT_ADDRESS[{}] OBJECT_SIZE[{}]: {}".format(info[address], info[size], data))
-                if line.split('=') != 2:
+                if len(line.split('=')) != 2:
                     break
 
             raw = line.split()
@@ -431,6 +715,14 @@ class XcfgConfigParser(BaseConfigBlock):
         return info, data, line
 
     def extract_info_block(self, header, file_ver):
+        """Remove version-specific extra fields from the main header series.
+
+        Input:
+            header: pandas.Series for the version header.
+            file_ver: Parsed xcfg version.
+        Output:
+            List of removed extra-field values in declared order.
+        """
         ext = []
 
         if file_ver in XcfgConfigParser.INFO_BLOCK_NAME_EXTRA_FIELDS.keys():
@@ -441,6 +733,18 @@ class XcfgConfigParser(BaseConfigBlock):
         return ext
 
     def load(self, path):
+        """Parse an xcfg file, calculate CRC, and store all derived blocks.
+
+        Input:
+            path: Path to the xcfg file.
+        Output:
+            None. Parsed data is stored on the parser instance.
+
+        Key steps:
+            1. Walk through headers using a state-machine loop.
+            2. Parse standard blocks, object data, and payload sections.
+            3. Build header/object tables and calculate the configuration CRC.
+        """
         self.open(path)
 
         if not self.f:
@@ -452,6 +756,7 @@ class XcfgConfigParser(BaseConfigBlock):
         application_info = []
         object_info = []
         object_data = []
+        payload_sections = []
         device_name = None
         file_info_names = None
 
@@ -481,6 +786,10 @@ class XcfgConfigParser(BaseConfigBlock):
                         if device_name in name:
                             version_info_names[i] = name.replace("_" + device_name, "")
                             break
+                elif tag is self.T_PAYLOAD_DATA:
+                    payload, line = self.parse_payload_data(it, result.group(1))
+                    if payload is not None:
+                        payload_sections.append(payload)
                 elif tag is self.T_OBJECT_DATA:
                     if len(result.groups()) == 2:
                         obj = int(result.group(1))
@@ -529,6 +838,7 @@ class XcfgConfigParser(BaseConfigBlock):
         self.set_ext('header_size', len(verinfo))
         # save Device info
         self.set_ext('device_name', device_name)
+        self.set_ext('payload_sections', payload_sections)
 
         # Save File info
         if file_info_names:
@@ -566,6 +876,13 @@ class XcfgConfigParser(BaseConfigBlock):
         del xCrc
 
     def _full_checksum_name(self):
+        """Resolve the checksum field name, including a device suffix when needed.
+
+        Input:
+            None.
+        Output:
+            Checksum field name used by the current xcfg version.
+        """
         checksum_name = self.INFO_BLOCK_NAME[self.CHECKSUM]
         device_name = self.get_ext('device_name')
         if device_name:
@@ -573,7 +890,43 @@ class XcfgConfigParser(BaseConfigBlock):
         
         return checksum_name
 
+    def payload_sections(self, default=None):
+        """Return parsed payload-section metadata.
+
+        Input:
+            default: Fallback value when no payload sections were parsed.
+        Output:
+            List of payload dictionaries or the provided default.
+        """
+        return self.get_ext('payload_sections', default)
+
+    def output_version(self, output):
+        """Resolve the effective xcfg output version from CLI intent and input version.
+
+        Input:
+            output: CLI output selector or None.
+        Output:
+            Effective xcfg output version integer.
+        """
+        file_ver = self.get_ext('file_version', 1)
+
+        if output is None:
+            return 1 if file_ver <= 2 else file_ver
+
+        if output <= 1:
+            return 1
+
+        return 1 if file_ver <= 2 else file_ver
+
     def _rebuild_checksum_header(self, lines, calculated_crc):
+        """Build the replacement checksum line within the version header block.
+
+        Input:
+            lines: Slice of version-header lines.
+            calculated_crc: Newly calculated config CRC.
+        Output:
+            Tuple of (line_index, replacement_line) or (None, None).
+        """
 
         key = self._full_checksum_name()
         excluded = self.INFO_BLOCK_NAME[self.INFO_BLOCK_CHECKSUM].split('_')[0]
@@ -596,6 +949,13 @@ class XcfgConfigParser(BaseConfigBlock):
         return None, None
 
     def replace_checksum(self, content):
+        """Replace the stored config checksum when it differs from the calculated CRC.
+
+        Input:
+            content: Full xcfg file content as a list of lines.
+        Output:
+            Updated content list or None when no replacement is needed.
+        """
 
         calculated_crc = self.calculated_crc()
         config_crc = self.config_crc()
@@ -631,6 +991,19 @@ class XcfgConfigParser(BaseConfigBlock):
             return content
 
     def convert_output_format(self, content, ver):
+        """Convert higher-version xcfg text into the low-version compatible format.
+
+        Input:
+            content: Full xcfg file content.
+            ver: Target output version.
+        Output:
+            New list of xcfg lines after format conversion.
+
+        Key steps:
+            1. Drop unsupported low-version sections like FILE_INFO_HEADER and DEVICE blocks.
+            2. Rename device-specific checksum fields when converting to V1.
+            3. Preserve higher-version fields only when the target format allows them.
+        """
 
         v.msg(v.INFO, 'Convert config from V{} version to V1 version:'.format(ver))
         content_new = []
@@ -675,6 +1048,19 @@ class XcfgConfigParser(BaseConfigBlock):
         return content_new
 
     def save(self, output, path=None):
+        """Save a rebuilt xcfg file using the resolved checksum and output-version policy.
+
+        Input:
+            output: CLI output selector or None.
+            path: Optional base path used to derive the output directory/name.
+        Output:
+            None. Writes a rebuilt xcfg file when content needs to change.
+
+        Key steps:
+            1. Replace the checksum when needed.
+            2. Optionally convert higher-version content to V1-compatible format.
+            3. Build a timestamped relative output filename and write the file.
+        """
 
         if not self.xcfg_content:
             return
@@ -692,12 +1078,15 @@ class XcfgConfigParser(BaseConfigBlock):
 
         # Convert the output version format
         file_ver = self.get_ext('file_version')
+        target_ver = self.output_version(output)
 
-        if output == 1 and file_ver > 1: # Output assigned to version 1
-            content = self.convert_output_format(content, output)
+        if target_ver == 1 and file_ver > 1: # Output assigned to version 1
+            content = self.convert_output_format(content, target_ver)
             if content:
                 generate = True
-                file_ver = 1
+                file_ver = target_ver
+        else:
+            file_ver = target_ver
 
         if not generate:
             return
@@ -733,6 +1122,13 @@ class XcfgConfigParser(BaseConfigBlock):
             outfile.close()
 
     def objects_num(self, default=0):
+        """Estimate the raw object-count field used in raw header export.
+
+        Input:
+            default: Fallback count when no object table exists.
+        Output:
+            Integer object count used by raw export helpers.
+        """
 
         num = default
         title = self.get('object_title')
@@ -745,6 +1141,13 @@ class XcfgConfigParser(BaseConfigBlock):
         return num
 
     def info_crc(self, default=None):
+        """Return the info-block checksum stored in the parsed header.
+
+        Input:
+            default: Fallback value when unavailable.
+        Output:
+            Info-block checksum integer or the provided default.
+        """
         header = self.get('header_info')
         if header is not None and len(header) >= self.INFO_BLOCK_CHECKSUM:
             return header.loc[self.INFO_BLOCK_NAME[self.INFO_BLOCK_CHECKSUM]]
@@ -752,6 +1155,13 @@ class XcfgConfigParser(BaseConfigBlock):
         return default
 
     def config_crc(self, default=None):
+        """Return the config checksum stored in the parsed header.
+
+        Input:
+            default: Fallback value when unavailable.
+        Output:
+            Config checksum integer or the provided default.
+        """
         header = self.get('header_info')
         if header is not None and len(header) >= self.CHECKSUM:
             return header.loc[self.INFO_BLOCK_NAME[self.CHECKSUM]]
@@ -759,18 +1169,43 @@ class XcfgConfigParser(BaseConfigBlock):
         return default
 
     def calculated_crc(self, default=None):
+        """Return the calculated CRC cached during parsing.
+
+        Input:
+            default: Fallback value when unavailable.
+        Output:
+            Calculated CRC integer or the provided default.
+        """
         return self.get_ext('calculated_crc', default)
 
 class XcfgCalculateCRC(object):
+    """CRC24 calculator for config data extracted from XCFG/RAW sources."""
 
     def __init__(self, xcfg):
+        """Store the parser instance that supplies object/header data."""
         self.xcfg = xcfg
 
     def load(self, path):
+        """Load an xcfg file through the bound parser.
+
+        Input:
+            path: Path to an xcfg file.
+        Output:
+            None. Delegates loading to the bound parser instance.
+        """
         self.xcfg.load(path)
 
     @classmethod
     def __crc24(cls, crc, byte0, byte1):
+        """Advance the 24-bit CRC state by one 16-bit little-endian word.
+
+        Input:
+            crc: Current CRC accumulator.
+            byte0: Low byte of the next data word.
+            byte1: High byte of the next data word.
+        Output:
+            Updated 24-bit CRC accumulator.
+        """
 
         crcpoly = 0x80001B
 
@@ -784,6 +1219,15 @@ class XcfgCalculateCRC(object):
 
     @classmethod
     def calculate_crc(cls, data, start_off=None, end_off=None):
+        """Calculate the CRC24 for a slice of byte data.
+
+        Input:
+            data: Byte list.
+            start_off: Optional start offset.
+            end_off: Optional exclusive end offset.
+        Output:
+            24-bit CRC integer for the selected data window.
+        """
 
         ptr = data[start_off:end_off]
 
@@ -805,6 +1249,18 @@ class XcfgCalculateCRC(object):
         return crc
 
     def calculate(self):
+        """Calculate the config CRC using the parser's object table and byte stream.
+
+        Input:
+            None.
+        Output:
+            Calculated CRC integer or None when required blocks are missing.
+
+        Key steps:
+            1. Find the CRC start object using the T14/T71/T7 priority rule.
+            2. Calculate CRC across object_data from that offset onward.
+            3. Compare the result with the stored header CRC for reporting.
+        """
         header = self.xcfg.get('header_info')
         if header is None:
             return
@@ -848,6 +1304,10 @@ class XcfgCalculateCRC(object):
 
 
 class XcfgBuildRawFile(object):
+    """Convert parsed xcfg content into raw-file text output."""
+
+    PAYLOAD_OBJECT = 68
+    PAYLOAD_INSTANCE = 0x800D
 
     LOOKUP_DB_TABLE = [
         XcfgConfigParser.INFO_BLOCK_NAME[XcfgConfigParser.FAMILY_ID],
@@ -857,10 +1317,18 @@ class XcfgBuildRawFile(object):
         XcfgConfigParser.INFO_BLOCK_NAME[XcfgConfigParser.INFO_BLOCK_CHECKSUM]]
 
     def __init__(self, xcfg):
+        """Store the parsed xcfg source and initialize optional DB state."""
         self.xcfg = xcfg
         self.db = None
 
     def load_db(self, db):
+        """Load an info-block lookup database used to fill raw header metadata.
+
+        Input:
+            db: pandas.DataFrame with raw header columns.
+        Output:
+            None. Stores a validated copy of the database.
+        """
 
         if not isinstance(db, pd.DataFrame):
             return
@@ -876,6 +1344,13 @@ class XcfgBuildRawFile(object):
             self.db = db.copy()
 
     def lookup_db(self, header):
+        """Find a matching DB row for the current header signature.
+
+        Input:
+            header: Parsed xcfg header series.
+        Output:
+            Matching pandas row or None when no row matches.
+        """
 
         if self.db is None:
             return
@@ -893,11 +1368,23 @@ class XcfgBuildRawFile(object):
             return None
 
     def get_extra_info(self, header):
+        """Resolve MATRIX_X/Y and object count for raw-header generation.
+
+        Input:
+            header: Parsed xcfg header series.
+        Output:
+            Tuple of (matrix_x, matrix_y, objects_num).
+
+        Key steps:
+            1. Prefer version-header extension data already present in the xcfg.
+            2. Fall back to the scanned database when available.
+            3. Prompt the user only when metadata still cannot be resolved.
+        """
 
         # from header info ext first
         info_ext = self.xcfg.get_ext('header_ext_data')
-        if info_ext and len(info_ext) == 3:  # MATRIX_X, MATRIX_Y, OBJECTS_NUM
-            return tuple(info_ext)
+        if info_ext and len(info_ext) >= 3:  # MATRIX_X, MATRIX_Y, OBJECTS_NUM
+            return tuple(info_ext[:3])
 
         result = self.lookup_db(header)
         if result is not None:
@@ -931,7 +1418,93 @@ class XcfgBuildRawFile(object):
 
         return tuple(ext)
 
+    def get_no_devices(self, default=1):
+        """Return the parsed device count used by V4 raw output.
+
+        Input:
+            default: Fallback device count.
+        Output:
+            Integer number of devices.
+        """
+        info_ext = self.xcfg.get_ext('header_ext_data')
+        if info_ext and len(info_ext) >= 4:
+            return info_ext[3]
+
+        return default
+
+    def output_version(self, output_ver):
+        """Resolve the raw output version from CLI intent and input xcfg version.
+
+        Input:
+            output_ver: CLI selector or None.
+        Output:
+            Effective raw version constant.
+        """
+        file_ver = self.xcfg.get_ext('file_version', 1)
+
+        if output_ver is None:
+            return 1
+
+        if output_ver <= 1:
+            return 1
+
+        if file_ver >= RawConfigParser.RAW_VERSION_4:
+            return RawConfigParser.RAW_VERSION_4
+
+        if file_ver >= RawConfigParser.RAW_VERSION_3:
+            return RawConfigParser.RAW_VERSION_3
+
+        return 1
+
+    def payload_lines(self):
+        """Convert parsed payload sections into dedicated raw-record lines.
+
+        Input:
+            None.
+        Output:
+            List of raw text lines representing payload records.
+
+        Key steps:
+            1. Read parsed payload bytes from the xcfg parser.
+            2. Append a separator byte and big-endian payload checksum bytes.
+            3. Emit the dedicated T68 raw pseudo-record format.
+        """
+        sections = self.xcfg.payload_sections([])
+        lines = []
+        for section in sections:
+            payload = list(section.get('data', []))
+            if not payload:
+                continue
+
+            checksum = int(section.get('checksum', 0))
+            payload.extend([
+                0,
+                (checksum >> 16) & 0xff,
+                (checksum >> 8) & 0xff,
+                checksum & 0xff,
+            ])
+
+            trunk = [
+                '{:04X}'.format(self.PAYLOAD_OBJECT),
+                '{:04X}'.format(self.PAYLOAD_INSTANCE),
+                '{:04X}'.format(len(payload)),
+                ' '.join('{:02X}'.format(x) for x in payload),
+            ]
+            lines.append(' '.join(trunk))
+
+        return lines
+
     def rebuild_raw_header_block(self, data, matrix_x, matrix_y, object_num):
+        """Build the compact raw-header payload line.
+
+        Input:
+            data: Parsed xcfg header series.
+            matrix_x: Resolved X matrix size.
+            matrix_y: Resolved Y matrix size.
+            object_num: Resolved raw object count.
+        Output:
+            pandas.Series representing the raw header block.
+        """
 
         data_new = list(data[:RawConfigParser.BUILD + 1])
         data_new.extend([matrix_x, matrix_y, object_num])
@@ -940,7 +1513,19 @@ class XcfgBuildRawFile(object):
 
         return info_block
 
-    def rebuild_raw_data(self):
+    def rebuild_raw_data(self, output_ver=None):
+        """Build the full raw file content from the parsed xcfg.
+
+        Input:
+            output_ver: CLI selector or None.
+        Output:
+            None. Stores generated text lines into self.raw_content.
+
+        Key steps:
+            1. Resolve the effective raw output version.
+            2. Emit version-specific raw headers and metadata lines.
+            3. Append object records and optional payload records.
+        """
 
         xcfg = self.xcfg
         header = xcfg.get('header_info')
@@ -960,9 +1545,22 @@ class XcfgBuildRawFile(object):
         v.msg(v.DEBUG, data)
 
         lines = []
+        raw_ver = self.output_version(output_ver)
 
         #RAW_HEADER
-        lines.append(RawConfigParser.RAW_FILE_HEADER_MAGIC_WORD)
+        if raw_ver >= RawConfigParser.RAW_VERSION_4:
+            lines.append(RawConfigParser.RAW_FILE_HEADER_MAGIC_WORD_V4)
+        elif raw_ver >= RawConfigParser.RAW_VERSION_3:
+            lines.append(RawConfigParser.RAW_FILE_HEADER_MAGIC_WORD_V3)
+        else:
+            lines.append(RawConfigParser.RAW_FILE_HEADER_MAGIC_WORD)
+
+        if raw_ver >= RawConfigParser.RAW_VERSION_3:
+            lines.append('ENCRYPTION 0')
+            lines.append('MAX_ENCRYPTION_BLOCKS 0')
+
+        if raw_ver >= RawConfigParser.RAW_VERSION_4:
+            lines.append('NO_DEVICES {:d}'.format(self.get_no_devices()))
         #RAW_INFO_BLOCK
 
         extra = self.get_extra_info(header)
@@ -976,12 +1574,14 @@ class XcfgBuildRawFile(object):
 
         raw = '{:06X}'.format(self.xcfg.calculated_crc(0))
         lines.append(raw)
+
+        if raw_ver >= RawConfigParser.RAW_VERSION_4:
+            lines.append('[DEVICE_0]')
         #RAW_CONFIG_DATA
 
+        payload_lines = self.payload_lines()
         for idx in title.index:
             info = title.loc[idx]
-            if info['object'] == 37:
-                continue
 
             trunk = []
             raw = '{:04X}'.format(info['object'])
@@ -998,10 +1598,22 @@ class XcfgBuildRawFile(object):
             trunk.append(raw)
             lines.append(' '.join(trunk))
 
+        # Keep payload-type T68 data at the end of RAW output.
+        if payload_lines:
+            lines.extend(payload_lines)
+
         v.msg(v.INFO, '\n'.join(lines))
         self.raw_content = lines
 
     def save_raw_file(self, output, path=None):
+        """Write the generated raw content to a timestamped output file.
+
+        Input:
+            output: CLI selector or None.
+            path: Optional base path used to derive output directory/name.
+        Output:
+            None. Writes a raw text file when raw_content is available.
+        """
         xcfg = self.xcfg
         if xcfg is None:
             return
@@ -1024,10 +1636,11 @@ class XcfgBuildRawFile(object):
         raw = name.rsplit('.', 1)
         main = raw[0]
         ext = 'raw'
+        raw_ver = self.output_version(output)
 
         now = datetime.datetime.now()
         crc = xcfg.calculated_crc(0)
-        basename = '.'.join([main, 'rebuild(v1)_at', now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(crc), ext])
+        basename = '.'.join([main, 'rebuild(v{:d})_at'.format(raw_ver), now.strftime('%Y%m%d_%H%M%S'), 'crc_0x{:06X}'.format(crc), ext])
         filename = os.path.join(dir, basename)
         if os.path.exists(filename):
             os.remove(filename)
@@ -1039,12 +1652,14 @@ class XcfgBuildRawFile(object):
             v.msg(v.CONST, 'Save raw file to: {:s}'.format(filename))
 
 class RawConfigScanner(RawConfigParser):
+    """Scan directories of raw files to build and maintain the header database."""
 
     PARAM = {'db_file': 'db_header.csv',
                 'max_scan_files': 5000,
                 'db_col': RawConfigParser.RAW_INFO_BLOCK_NAME[:RawConfigParser.CHECKSUM]}
 
     def __init__(self):
+        """Initialize the scanner, parser helper, and in-memory database."""
         super(RawConfigScanner, self).__init__()
         self.parser = RawConfigParser(method=RawConfigParser.PARSE_HEADER)
         self.db = pd.DataFrame(columns=self.PARAM['db_col'])
@@ -1052,6 +1667,13 @@ class RawConfigScanner(RawConfigParser):
         self.db_new = False
 
     def load(self, path=None):
+        """Load the CSV header database from disk.
+
+        Input:
+            path: Optional override path to the CSV database file.
+        Output:
+            pandas.DataFrame or None when loading fails.
+        """
         try:
             if path is not None:
                 self.db_file = path
@@ -1065,6 +1687,13 @@ class RawConfigScanner(RawConfigParser):
             v.msg(v.ERR, 'Unable to load db file: {:s}, Error = {:s}'.format(self.db_file, str(e)))
 
     def save(self):
+        """Persist the updated header database when new entries were added.
+
+        Input:
+            None.
+        Output:
+            None. Writes the CSV file only when db_new is True.
+        """
 
         if not self.db_new:
             return
@@ -1087,6 +1716,14 @@ class RawConfigScanner(RawConfigParser):
         self.db_new = False
 
     def __search_header_in_dirs(self, path, limited=0):
+        """Search a directory tree for raw files and extract header blocks.
+
+        Input:
+            path: Directory path to scan.
+            limited: Unused placeholder for future scan limiting.
+        Output:
+            Tuple of (header_block_list, file_path_list).
+        """
 
         header_blocks = []
         paths = []
@@ -1118,6 +1755,15 @@ class RawConfigScanner(RawConfigParser):
         return header_blocks, paths
 
     def __query_select_duplicate(self, db_header, header, extra):
+        """Ask the user how to resolve a duplicate header signature conflict.
+
+        Input:
+            db_header: Existing database header row.
+            header: Newly discovered header row.
+            extra: Context string, usually the source file path.
+        Output:
+            Selected header row or None when both entries should be discarded.
+        """
         v.msg(v.WARN, '<1> Database: ', ' '.join(map(lambda x: '{:02X}'.format(x), db_header)))
         v.msg(v.WARN, '<2> Current new file: ', ' '.join(map(lambda x: '{:02X}'.format(x), header)), '({})'.format(extra))
         try:
@@ -1134,6 +1780,15 @@ class RawConfigScanner(RawConfigParser):
             return db_header
 
     def __check_duplicate_and_update(self, db_list, header, extra=None):
+        """Insert a new header row unless a conflicting duplicate must be resolved.
+
+        Input:
+            db_list: Current database rows as a mutable list.
+            header: Candidate header row.
+            extra: Optional source-path context.
+        Output:
+            Inserted/replaced header row, or None when nothing changes.
+        """
 
         for i, db_header in enumerate(db_list):
             if header[:self.BUILD + 1] == db_header[:self.BUILD + 1]:
@@ -1156,6 +1811,18 @@ class RawConfigScanner(RawConfigParser):
         return header
 
     def scan(self, path):
+        """Scan a file or directory for raw headers and merge them into the DB.
+
+        Input:
+            path: File or directory to scan.
+        Output:
+            Updated pandas.DataFrame database.
+
+        Key steps:
+            1. Normalize file input into a scan directory.
+            2. Parse headers from all discovered raw files.
+            3. Merge non-duplicate entries and mark the DB dirty when changed.
+        """
 
         db_list = self.db.values.tolist()
         new_list = []

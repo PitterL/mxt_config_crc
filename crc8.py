@@ -1,10 +1,31 @@
 class MessageCrc(object):
+    """Compute an 8-bit CRC for message byte arrays."""
+
     CRC_PLOY = 0x8c
 
     def __init__(self, data):
+        """Store the source byte array used for CRC8 calculation.
+
+        Input:
+            data: Iterable of integer byte values.
+        Output:
+            None. Saves data for later calculation.
+        """
         self.__data = data
 
     def crc8(self, crc, val):
+        """Advance the CRC8 state by one byte.
+
+        Input:
+            crc: Current CRC accumulator.
+            val: Next byte value to fold into the CRC.
+        Output:
+            Updated CRC accumulator.
+
+        Key steps:
+            1. Process 8 bits from the input byte.
+            2. Shift the CRC register and apply the configured polynomial when needed.
+        """
         for i in range(8):
             fb = (crc ^ val) & 0x01
             val >>= 1
@@ -15,6 +36,13 @@ class MessageCrc(object):
         return crc
 
     def calculate(self):
+        """Calculate and print the running CRC8 value for the stored byte array.
+
+        Input:
+            None.
+        Output:
+            Final CRC8 integer.
+        """
         data = self.__data
         crc = 0
         for i in range(len(data)):

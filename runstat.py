@@ -6,6 +6,20 @@ import utils
 from verbose import VerboseMessage as v
 
 def runstat(args=None):
+    """Run the CLI workflow for XCFG/TXT parsing, CRC validation, and export.
+
+    Input:
+        args: Optional command-line argument list. When omitted, sys.argv[1:] is used.
+    Output:
+        None. Side effects include printing status, saving rebuilt xcfg/raw files,
+        and scanning/updating the header database when requested.
+
+    Key steps:
+        1. Parse CLI arguments and configure verbose logging.
+        2. Optionally load or scan the info-block database.
+        3. Dispatch to XCFG processing or TXT CRC calculation.
+        4. Apply the resolved output-version policy to xcfg/raw generation.
+    """
     parser = parse_args(args)
     aargs = args if args is not None else sys.argv[1:]
     args = parser.parse_args(aargs)
@@ -51,7 +65,7 @@ def runstat(args=None):
                 builder = mcp.XcfgBuildRawFile(xcfg)
                 if args.raw:
                     builder.load_db(db)
-                    builder.rebuild_raw_data()
+                    builder.rebuild_raw_data(args.output)
                     builder.save_raw_file(args.output)
             elif ex_type == 'txt':
                 sep = args.sep
@@ -63,6 +77,18 @@ def runstat(args=None):
             v.msg(v.WARN, 'Un-exist file name \'{:s}\''.format(path))
 
 def parse_args(args=None):
+    """Build and return the command-line argument parser.
+
+    Input:
+        args: Unused parser-construction placeholder kept for compatibility.
+    Output:
+        argparse.ArgumentParser configured for config CRC workflows.
+
+    Key steps:
+        1. Define file-selection and scanning arguments.
+        2. Define raw export, verbose, and output-format controls.
+        3. Keep defaults aligned with the current version-policy rules.
+    """
 
     parser = argparse.ArgumentParser(
         prog='Maxtouch Config calculator',
@@ -70,7 +96,7 @@ def parse_args(args=None):
         description='Tools for parsing maxTouch config and calculating config crc')
 
     parser.add_argument('--version',
-                        action='version', version='%(prog)s v1.2.7',
+                        action='version', version='%(prog)s v1.2.10',
                         help='show version')
 
     parser.add_argument('-f', '--filename', required=False,
@@ -117,8 +143,8 @@ def parse_args(args=None):
     parser.add_argument('-o', '--output',
                         type=int,
                         choices=(1,2),
-                        default=1,
-                        help='set the output config file version (1: Version 1; 2: higher version)')
+                        default=None,
+                        help='set the output format (default: keep xcfg input version except V2->V1, raw outputs V1; 1: force V1 format; 2: use higher/original version when available)')
     return parser
 
 cmd = None
